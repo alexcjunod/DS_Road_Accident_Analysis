@@ -1,0 +1,38 @@
+```{r, echo = FALSE, message = FALSE}
+
+source(here::here("scripts/setup.R"))
+```
+
+# 1. Introduction
+
+## 1.1 Overview and Motivation
+
+Road accidents continue to be one of the leading causes of death and hospitalizations around the world. Many factors such as weather, driver behavior and demographics contribute to a substantial number of deaths worldwide each year (1.3M on average based on research conducted by the WHO) (World Health Organization, 2022). In 2018 alone, it was estimated that there was a road death every 22 seconds (World Health Organization, 2018). In the case of the UK in 2022, a fatal road accident occurred every 33 minutes on average. These road accidents remain extremely complicated and provide a great base of information in which we can put our data science toolkit to work, to discover and reveal hidden information on patterns and insights into what influences road safety.
+
+The motivation behind our project's choice (UK Road Accident Analysis) is deeply rooted in personal experiences of the members of our group. Witnessing the life-altering consequences of road accidents firsthand has ignited our interest for understanding the factors that contribute to such accidents on the road. This emotional connection, combined with the fact that all our team members having to complete "Cours-2-phases" classes mandatory for our licenses, which explain the impacts of road accidents, has created a deep curiosity for the subject.
+
+Beyond the emotional and curiosity realm, our team recognizes that our selected data sets offer a wealth of tangible data, enabling us to explore various data science domains. This project will facilitate the enhancement of our descriptive, regression, and spatial-temporal analytical skills, empowering us to discern patterns and relationships within the data.
+
+## 1.2 Objectives
+
+Our project was centered on comprehending road accident patterns within the UK for the year 2022. We divided our analysis more specifically into four key components to understand their individual impacts on road accidents in 2022 in the UK: the utilization of spatial analysis to identify and understand accident hotspots, the examination of temporal trends, demographics, vehicle characteristics and their relation to accident severity. This data science project served as an opportunity for us to apply our newly acquired skills in exploratory data analysis, data analysis, and statistical modeling to real-world data, aiming to contribute to a better understanding of road safety in the UK for the year 2022.
+
+## 1.3 Related Work:
+
+Various sources served as inspirations for our research project on UK road accidents in 2022.
+
+In our view, Vox News stood out as a leader in this field, excelling in the art of presenting data to facilitate storytelling and deliver valuable insights to their audience. We were inspired by the way they craft their videos, articles, and website, which we believe are exemplary in providing informative and engaging content.
+
+We also drew inspiration for the themes to address in our study from the official [UK government website](https://www.gov.uk). This authoritative source provided us with essential data and insights related to road safety and accidents in the UK, ensuring that our research is firmly grounded in government statistics and policies.
+
+## 1.4 Research questions
+
+We began our project with a primary focus on investigating spatial, temporal, demographic, and vehicle trends in 2022. However, as we dived deeper into our research (especially after our exploratory data analysis), we recognized the opportunity to add another dimension to our analysis by examining how these factors were associated with the severity of accidents. Therefore, our research questions had a dual purpose: firstly, to gain insights into the fundamental aspects of accidents, and secondly, to explore their impact on accident severity. This approach introduced added complexity to our analysis, but we believe it yielded even more intriguing insights from our complex datasets.
+
+***a) Can we identify locations (geographical (coordinate based) and spatial (urban vs rural, highway vs one way road) that are more prone to accidents?***
+
+***b) What temporal trends (time of day/month/week, seasonality) can we identify in road accidents in the UK ? Can we identify the most dangerous times to be on the road?***
+
+***c) What are the most prevalent demographics (age, gender) and vehicles characteristics (engine size, electric vs petrol, etc.) of road accidents?***
+
+***d) Can we predict the severity of an accident using significant variables in our dataset and validate its accuracy?***

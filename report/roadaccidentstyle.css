@@ -1,0 +1,44 @@
+/* Custom CSS for Quarto Document */
+
+/* Change the font family to a serif font and justify the text */
+body {
+  text-align: justify;
+}
+.title-block {
+  color: white; /* This sets the text color for the title block */
+}
+
+/* If you want to target specific elements inside the title block, use more specific selectors */
+.title-block .title {
+  color: white;
+}
+
+.title-block .subtitle {
+  color: white;
+}
+
+.title-block .author,
+.title-block .date {
+  color: white;
+}
+/* Change color of Heading 1 and the line beneath it */
+h1 {
+  color: #4C4E4D
+; 
+}
+
+/* Change color of other headings, if needed, and the line beneath them */
+h2, h3, h4, h5, h6 {
+  color: #626563; 
+}
+
+/* Change color of other headings, if needed, and the line beneath them */
+h2, {
+  border-bottom: 2px solid #999999; 
+}
+
+/* Ensure the Table of Contents uses the default color */
+#TOC, #toc, .table-of-contents {
+  background-color: initial;
+  color: initial;
+}

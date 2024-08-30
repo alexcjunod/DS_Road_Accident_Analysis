@@ -1,0 +1,2223 @@
+# 4. Analysis
+
+The analysis section of our report consistently follows a structured approach, designed to enhance reader understanding and facilitate the development of our analytical and data science skills. Our methodology involves initially addressing each question with a simpler method, then reinforcing our conclusions through more intricate analytical techniques. We aim for our analysis to be accessible and comprehensible to individuals with varying levels of expertise in statistics and data science.
+
+```{r source analysis, echo=FALSE, message = FALSE}
+source(here::here("scripts/setup.R"))
+```
+
+```{r import analysis, echo=FALSE}
+q1_data_path <- here::here("data", "q1_clean.rds")
+q1_clean <- readRDS(q1_data_path)
+q2_data_path <- here::here("data", "q2_clean.rds")
+q2_clean <- readRDS(q2_data_path)
+q3a_data_path <- here::here("data", "q3a_clean.rds")
+q3a_clean <- readRDS(q3a_data_path)
+q3b_data_path <- here::here("data", "q3b_clean.rds")
+q3b_clean <- readRDS(q3b_data_path)
+logit_data_path <- here::here("data", "logit_data.rds")
+logit_data <- readRDS(logit_data_path)
+```
+
+## 4.1 Research Question #1: Why are certain locations more prone to accidents? Why are they particularly more dangerous?
+
+In this section, we sought out not to only spatially pinpoint areas with both the highest incidences of accidents but also to pinpoint locations that were prone to more serious accidents as well. In contrast to our earlier exploratory analysis, where we examined spatial patterns by vehicle types, our approach here aimed to comprehensively assess road safety by considering all types of road users.
+
+Our methodological approach involved the following steps:
+
+1. **Creation and computation of accident and severity indices:** We computed both an accident index and a severity index for each region, mapping them to visualize the density of accidents and severe accidents across the regions. This allowed us to identify regions that were prone to higher rates of accidents as well as locations that were more prone to severe accidents (most dangerous locations to drive).
+
+2. **Comparative analysis of spatial characteristics**:
+
+Then, we compared these two sets of regions with each other and against the UK's baseline average, examining the proportion of accidents in each region in relation to various spatial characteristics. This analysis was aimed at uncovering hidden spatial trends in road accidents and their potential correlation with accident frequency and severity.
+
+3. **Logit regression:** Lastly, we performed a logistic regression analysis to dive deeper into the likelihood of being involved in a more severe accident as opposed to a slight one, considering the presence of specific spatial variables. This stage of our study helped to contextualize and deepen our understanding of the results obtained from our initial two analytical steps.
+
+### 4.1.1 Spatial Mapping w/ Severity Indices:
+
+To answer our research question and identify the the regions most susceptible to accidents, including those of a severe nature, we developed two distinct indices. The initial index, known as the "Accident Index," was formulated by standardizing the number of accidents per Unitary Authority (UTLA) and then dividing this figure by 10,000 inhabitants (formula provided below). This Accident Index was subsequently depicted on individual regions for each UTLA, illustrating the adjusted frequency of accidents within each area.
+
+The second index, referred as "Severity Index," employed the same calculation as the first, with one crucial distinction: it excluded all incidents categorized as slight accidents. Similar to our approach for the Accident Index, we also mapped the Severity Index for each UTLA. This dual approach revealed significant disparities among the UTLAs, emphasizing that while certain areas experienced a higher frequency of accidents, the evaluation of severity produced contrasting outcomes.
+
+Below you can find two interactive maps, one for the accident index and the other for the severity index. The maps are interactive and allow you to zoom in and out on the regions, you can also click on them to obtain information on their populations and number of accidents. You can also find the top five UTLA's per the accident index as well as the severity index in the table below as well.
+
+```{r reimportation of geojson for analysis file, message=FALSE, echo=FALSE, include=FALSE}
+# In order to maintain independent quarto files, we reimport the geojson boundery file here - if you're running directly from one to another, this isn't necessary to place here if replicating - however I suggest running it just in case :)
+geojson_data_path <- here::here("data", "Local_Authority_(Upper_Tier)_IMD_2019_(OSGB1936).geojson")
+utla_boundaries <- st_read(geojson_data_path)
+```
+
+```{r,echo=FALSE}
+# Here we are just specifying the file path for the population dataset - make sure that it's located in your root directory data folder (see here documentation!)
+population_data_path <- here("data", "sape23dt13mid2020lsoabroadagesestimatesunformatted.xlsx")
+population_sheet <- 4 # Since this UK government's excel file has multiple tabs, here I had to define that I wanted to to take the 4th one
+population_data <- read_excel(population_data_path, sheet = population_sheet, skip=3, col_names = TRUE) # here we drop all the columns that we don't need after the ones that we took
+population_data <- population_data[,-(3:6)]
+
+# Check if the column 'All Ages' does not exist in q1_clean (spatial dataset)
+if (!"All Ages" %in% names(q1_clean)) {
+  q1_clean <- q1_clean %>%
+    left_join(population_data, by = c("lsoa_of_accident_location" = "LSOA Code"))
+} else {
+  message("The 'All Ages' column already exists in q1_clean. No join performed.")
+}
+```
+
+```{r accident index map preprocessing, echo=FALSE}
+# Here we are convering the spatial dataset to a sf object so that it can be handeled properly when mapped - this is a requiremnt when working with boundary mapping
+q1_clean_sf <- q1_clean %>%
+  filter(!is.na(longitude) & !is.na(latitude)) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# Spatially join q1_clean_sf with UTLA boundaries
+accidents_joined <- st_join(q1_clean_sf, utla_boundaries, left = FALSE, join = st_intersects)
+
+# Aggregate accidents by UTLA
+# Here we are aggregating all the accidents directly by their corresponding UTLA, in the case of the accident's joined df that we just created, the column name is called ctyua19cd, we then summarize by the count of each of the rows considering that each of them corresponds to a single accident. 
+accidents_by_utla <- accidents_joined %>%
+  group_by(ctyua19cd) %>%
+  summarise(accident_count = n())
+
+# Here we are adding up the population of each of the LSOA's which then we will aggregate together to calculate the population of each of the corresponding UTLAs. 
+population_by_utla <- q1_clean %>%
+  select(lsoa_of_accident_location, UTLA20CD, `All Ages`) %>%
+  distinct(lsoa_of_accident_location, UTLA20CD, .keep_all = TRUE) %>%
+  group_by(UTLA20CD) %>%
+  summarise(total_population = sum(`All Ages`, na.rm = TRUE))
+
+# For some reason that unfortunately I can not debug, the buckinghamshire population won't get created, therefore I've added it manually as a countermeasure to ensure everything is working correctly. 
+buckinghamshire_code <- "E10000002" 
+buckinghamshire_population <- 543128
+population_by_utla <- population_by_utla %>%
+  add_row(UTLA20CD = buckinghamshire_code, total_population = buckinghamshire_population)
+
+# Converting UTLA boundaries to a regular dataframe
+utla_boundaries_df <- as.data.frame(utla_boundaries)
+
+
+# Here we are joining the count of the accidents we made before with the population data with the UTLA bounderies all toegther. 
+utla_boundaries_with_data <- utla_boundaries_df %>%
+  left_join(accidents_by_utla, by = c("ctyua19cd" = "ctyua19cd")) %>%
+  left_join(population_by_utla, by = c("ctyua19cd" = "UTLA20CD")) %>%
+  mutate(accident_index = (accident_count / total_population) * 100000) # Accident index per 100,000 people - change this if you want to change the index to per capita, etc.. 
+
+# Convert back to sf object
+utla_boundaries_with_data <- st_as_sf(utla_boundaries_with_data, crs = st_crs(utla_boundaries))
+```
+
+```{r accident index map, eval=FALSE}
+#| column: screen-inset-right
+library(viridis)
+
+# Here I need to adjust the bins for the chloropleth map since City of London is SO MUCH BIGGER than the others it screws with our nuances!!! So I am going to exclude the highest value from the calculation - therefore we will have say 10 quanties that will be the steps from dark purple to our yellow. It might be a little more complex to add the colours hre but I'll try my best - I don't think that leaflet likes anything with conditional coloring. 
+
+max_value <- max(utla_boundaries_with_data$accident_index, na.rm = TRUE) # Calculates the UTLA with the higest index
+second_max_value <- max(utla_boundaries_with_data$accident_index[utla_boundaries_with_data$accident_index < max_value])# Calculates the UTLA with the second highest index
+
+# The following code uses viridis package to get the colours for the map, feel free to change with colours that match your style more. I believe that these colours are great as they provide a great contrast between the regions for a good comparatison. 
+# Given the findings, this code neglects the highest indexed UTLA since it was disproportionately high. In order to not skew the results and decrease contrast between other areas, we decided that we will use the second highest location as the "top" value to create our bins. Therefore if this is not the case for you - or you want to use a different means of normalization, just change this to max value instead of second max value. 
+color_palette <- colorBin(
+  palette = "viridis",
+  domain = c(min(utla_boundaries_with_data$accident_index, na.rm = TRUE), second_max_value),
+  bins = 10,
+  pretty = FALSE
+)
+
+# Here we wanted to show the top location that was disproportionately higher in red, so we changed the max value UTLA to red. 
+adjusted_color_palette <- function(value) {
+  ifelse(value == max_value, "red", color_palette(value))
+}
+
+# Create a leaflet map with the adjusted color palette
+# Here we begin the customization of the leaflet map to map our UTLA's with their colours depending on their index.
+leaflet_map <- leaflet(utla_boundaries_with_data) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>% # This we selected as it's a map with less definition, feel free to change but note that it will increase your file size - if this is not a problem for you I'd highly suggest open stree map. heres a link to all the available backgrounds, have fun :) https://leaflet-extras.github.io/leaflet-providers/preview/index.html
+  addPolygons(
+    fillColor = ~adjusted_color_palette(accident_index),
+    fillOpacity = 0.7,  # Makes the colors a bit see-through so the map underneath peeks through
+    color = "#444444",  # This is for the outlines of each UTLA area
+    weight = 1,  # How thicc we want those outlines
+    # Pop-ups are cool - they show more info when you click on an area
+    popup = ~paste(ctyua19nm,
+                   "<br>Accidents: ", accident_count,
+                   "<br>Population: ", total_population,
+                   "<br>Accident Index: ", round(accident_index, 2))
+  ) %>%
+  # Let's add a legend to make sense of the colors
+  addLegend(
+    "bottomright",  # Placing it in the bottom-right corner of the map
+    title = "Accident Index (per 100,000 people)",  # A title for our legend
+    # Here we define the color scheme for the legend to match the map
+    pal = color_palette,
+    values = ~accident_index,  # The range of index values we're displaying
+    # Formatting the legend labels to show the quantiles and the max value
+    labels = sprintf("%.2f", c(quantile(c(min(utla_boundaries_with_data$accident_index, na.rm = TRUE), second_max_value), probs = seq(0, 1, length.out = 11)), "Max"))
+  )
+
+# And voila, our map's all set to go!
+leaflet_map
+
+# EXPECTED OUTPUT IS AN INTERACTIVE LEAFLET MAP WITH UTLA BOUNDERIES WITH DIFFERENT COLOURS WHICH REPRESENT THEIR CORRESPONDING ACCIDENT INDEXES
+```
+
+```{r severity index creation,echo=FALSE}
+# Here we are assigning weights for each of the categories that we are going to be using to calculate the severity index. If you wanted for example to weigh fatal higher, or add back weight just change the numbers or uncomment slight
+weight_fatal <- 3
+weight_serious <- 2
+#weight_slight <- 1
+
+buckinghamshire_code <- "E06000060" 
+buckinghamshire_population <- 543128
+population_by_utla <- population_by_utla %>%
+  add_row(UTLA20CD = buckinghamshire_code, total_population = buckinghamshire_population)
+
+# Here we are calculating the weighted severity index for each of the accidents in our spatial dataset
+q1_clean$weighted_severity <- with(q1_clean, 
+                                   num_fatal * weight_fatal + 
+                                   num_serious * weight_serious) #+ 
+                                   #num_slight * weight_slight)
+```
+
+```{r severity index map preprocessing, echo=FALSE}
+severity_by_utla <- q1_clean %>%
+  group_by(UTLA20CD) %>%
+  summarise(total_weighted_severity = sum(weighted_severity))
+
+# Join with utla_boundaries_df and population_by_utla using UTLA codes
+utla_boundaries_with_data2 <- utla_boundaries_df %>%
+  left_join(accidents_by_utla, by = c("ctyua19cd" = "ctyua19cd")) %>%
+  left_join(population_by_utla, by = c("ctyua19cd" = "UTLA20CD")) %>%
+  left_join(severity_by_utla, by = c("ctyua19cd" = "UTLA20CD"))
+
+# Calculate the adjusted accident index
+utla_boundaries_with_data2 <- utla_boundaries_with_data2 %>%
+  mutate(adjusted_accident_index = (total_weighted_severity / total_population) * 100000)
+
+# Convert back to sf object
+utla_boundaries_with_severity_data <- st_as_sf(utla_boundaries_with_data2, crs = st_crs(utla_boundaries))
+```
+
+```{r severity index map, eval=FALSE}
+# This follows the first map creation very closely!!
+max_value <- max(utla_boundaries_with_severity_data$adjusted_accident_index, na.rm = TRUE)
+data_for_quantiles <- filter(utla_boundaries_with_severity_data, adjusted_accident_index < max_value)
+
+# Let's create our quantile bins - which will be the 10 layers of colours used in our map
+num_quantiles <- 10
+quantile_bins <- quantile(data_for_quantiles$adjusted_accident_index, probs = seq(0, 1, length.out = num_quantiles + 1), na.rm = TRUE)
+
+# As discussed we used the viridis colour palette, but feel free to change. 
+custom_color_palette <- function(x) {
+  # If it's the max value, let's highlight it in red. Everything else gets the 'viridis' treatment.
+  ifelse(x == max_value, "red", colorBin(palette = "viridis", bins = quantile_bins, domain = data_for_quantiles$adjusted_accident_index)(x))
+}
+# Time to pick some colors for our legend - one for each slice of the pie (quantile) and one for the top spot!
+# This defines the legend colours using  viridis and sets the top one as red - which we did on the other map as well. 
+legend_colors <- c(viridis(length(quantile_bins) - 1), "red")
+
+# Legend labels - we want these to be clear and easy to understand
+legend_labels <- c(sprintf("%.2f", quantile_bins[-length(quantile_bins)]), "Max")
+
+# Setting our map's starting view. We're centering it around the middle of the UK. I didn't do this on the other map and this was a test - it doesn't change much and it's hard to implement, so up to you if this is something you'd want to replicate if you are redoing this report or want to use it somewhere elsewhere
+uk_center_lat <- 54.7
+uk_center_lon <- -3.4
+initial_zoom_level <- 6  
+
+# Now we're putting it all together
+leaflet_map <- leaflet(utla_boundaries_with_severity_data) %>%
+  setView(lng = uk_center_lon, lat = uk_center_lat, zoom = initial_zoom_level) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  # Adding UTLA polygons to the map. They'll be colored based on our custom palette that we defined before
+  addPolygons(
+    fillColor = ~custom_color_palette(adjusted_accident_index),
+    fillOpacity = 0.7,
+    color = "#444444",
+    weight = 1,
+    # Pop-ups for extra info - always handy!
+    popup = ~paste(ctyua19nm,
+                   "<br>Accidents: ", accident_count,
+                   "<br>Population: ", total_population,
+                   "<br>Severity Index: ", round(adjusted_accident_index, 2))
+  ) %>%
+  # And of course, our legend - can't forget that!
+  addLegend(
+    "bottomright",
+    title = "Severity Accident Index (per 100,000 people)",
+    labels = legend_labels,
+    colors = legend_colors
+  )
+
+# And there we have it, our map's ready to go!
+leaflet_map
+
+```
+
+![Interactive Accident Index Choropleth Map](images/accident_index_map.png)
+
+![Interactive Severity Index Choropleth Map](images/severity_index_map.png)
+
+::: callout-important
+The two maps above are created using *Leaflet* - an interactive mapping package for R Studio. However, due to the lack of processing ability to knit these two maps into a self contained HTML file we were unable to add them in their interactive form. We do invite you to run the analysis file, or render our project with "self-contained" turned off to get the full experience.
+:::
+
+This dual approach revealed significant disparities among the UTLAs, emphasizing that while certain areas experienced a higher frequency of accidents, the evaluation of severity produced contrasting outcomes. For instance, London and Westminster consistently ranked as the top two areas in both indices, yet, when scrutinizing the Severity Index, Blackpool emerged as a top-three contender.
+
+```{r top 5 UTLA accident summary table, echo=FALSE}
+
+#This code was built to create a summary table with the characteristics of the top five UTLA's with the highest accident indices. 
+
+# Starting off check out the top 5 UTLAs with the highest accident indices
+top_accident_utlas <- utla_boundaries_with_data %>%
+  arrange(desc(accident_index)) %>% # Here we are arranging the table in descending order
+  slice_head(n = 5) %>% # Choosing the amount of utlas we want - can modify here but you'll need to change the title of the table manually
+  select(ctyua19cd, ctyua19nm, accident_index, total_population) # here we are precising which columns we want to take
+
+# Rounding our indices for a neater look
+top_accident_utlas <- top_accident_utlas %>%
+  mutate(accident_index = round(accident_index, 2)) 
+
+# Gathering more detailed accident stats from our spatial dataset - here you can choose which columns you want to sum up. be careful since here we're summing up numerical things, it wouldn't work with other characters for example, you'd need to change this manually if you are using a different dataset for example. 
+accident_summary <- q1_clean %>%
+  group_by(UTLA20CD) %>%
+  summarise(
+    num_slight = sum(num_slight, na.rm = TRUE),
+    num_serious = sum(num_serious, na.rm = TRUE),
+    num_fatal = sum(num_fatal, na.rm = TRUE),
+    num_motorcycle = sum(Motorcycle, na.rm = TRUE),
+    num_trucks = sum(Trucks, na.rm = TRUE),
+    num_car = sum(Car, na.rm = TRUE),
+    num_other = sum(Other, na.rm = TRUE),
+    num_cyclist = sum(Cyclist, na.rm = TRUE),
+    total_accidents = num_slight + num_serious + num_fatal
+  ) %>%
+  ungroup()
+
+# Merging these stats with our top UTLAs
+final_summary_table <- top_accident_utlas %>%
+  left_join(accident_summary, by = c("ctyua19cd" = "UTLA20CD"))
+
+# Updated column titles for clarity - this changes the name from the title of the column in the dataset to whatever we want it to be
+col_titles <- c("UTLA Code", "UTLA Name", "Accident Index", "Total Population", 
+                "Slight Accidents", "Serious Accidents", "Fatal Accidents", 
+                "Motorcycle Accidents", "Truck Accidents", "Car Accidents", 
+                "Other Vehicle Accidents", "Cyclist Accidents", "Total Casualties")
+
+# Creating a neat datatable for presenting in our quarto html 
+datatable(
+  final_summary_table,
+  rownames = FALSE,
+  caption = 'Top 5 Accident Hotspots',
+  options = list(
+    pageLength = 5,
+    autoWidth = TRUE,
+    searching = FALSE,
+    lengthChange = FALSE,
+    paging = FALSE
+  ),
+  colnames = col_titles
+)
+```
+
+```{r top 5 UTLA severity summary table, echo=FALSE}
+
+# This table follows the same process is the one above, just for severity instead of index. Please refer above for more information.
+top_severity_indexes <- utla_boundaries_with_data2 %>%
+  arrange(desc(adjusted_accident_index)) %>%
+  slice_head(n = 5) %>%
+  select(ctyua19cd, ctyua19nm, adjusted_accident_index, total_population)
+
+# Rounding the adjusted_accident_index
+top_severity_indexes <- top_severity_indexes %>%
+  mutate(adjusted_accident_index = round(adjusted_accident_index, 2))
+
+# Summarize detailed accident data for these locations
+severity_accident_summary <- q1_clean %>%
+  group_by(UTLA20CD) %>%
+  summarise(
+    num_slight = sum(num_slight, na.rm = TRUE),
+    num_serious = sum(num_serious, na.rm = TRUE),
+    num_fatal = sum(num_fatal, na.rm = TRUE),
+    num_motorcycle = sum(Motorcycle, na.rm = TRUE),
+    num_trucks = sum(Trucks, na.rm = TRUE),
+    num_car = sum(Car, na.rm = TRUE),
+    num_other = sum(Other, na.rm = TRUE),
+    num_cyclist = sum(Cyclist, na.rm = TRUE),
+    total_accidents = num_slight + num_serious + num_fatal
+  ) %>%
+  ungroup()
+
+# Merge the summarized data with the top locations
+final_severity_summary_table <- top_severity_indexes %>%
+  left_join(severity_accident_summary, by = c("ctyua19cd" = "UTLA20CD"))
+
+# Define custom column titles
+col_titles <- c("UTLA Code","UTLA Name", "Accident Index", "Total Population", 
+                "Slight Accidents", "Serious Accidents", "Fatal Accidents", 
+                "Motorcycle Accidents", "Truck Accidents", "Car Accidents", 
+                "Other Vehicle Accidents", "Cyclist Accidents", "Total Casualties")
+
+# Create the datatable with the adjusted column titles
+datatable(
+  final_severity_summary_table,
+  rownames = FALSE,
+  caption = 'Top 5 Severe Accident Hotspots',
+  options = list(
+    pageLength = 5,
+    autoWidth = TRUE,
+    searching = FALSE,
+    lengthChange = FALSE,
+    paging = FALSE
+  ),
+  colnames = col_titles  # Updated column titles to match the data
+)
+```
+
+When examining the occurrence of road accidents, both the City of London and Westminster, both areas consistently ranked at the top in the accident indexes.
+
+The City of London, often referred to as the financial heart of the United Kingdom, is characterized by a high concentration of financial institutions and offices. This results in a significant influx of commuting professionals daily, contributing to increased footfall and vehicle traffic (it is estimated that the population increases up to x60 fold during the daytime (Jack Brown, Sara Gariban, Erica Belcher, Mario Washington-Ihieme, 2020).
+
+Similarly, Westminster is a hub for tourists, drawing millions each year to its historic sites such as the Big Ben. This tourist traffic, combined with the area's everyday operational demands, leads to busy streets and a higher likelihood of traffic incidents.
+
+In comparison to other UK regions, both the City of London and Westminster stand out for their low residential populations, contrasted by high numbers of visitors. These areas are characterized by a mix of heavy pedestrian and vehicle traffic, coupled with a notable presence of tourists and professionals. This unique combination of factors could potentially increase the likelihood and severity of accidents in these locations, potentially skewing their accident indexes.
+
+To maintain the integrity of our analysis and to mitigate any biases, we therefore proceeded by examining UTLAs that did not exhibit the same characteristics as the City of London and Westminster.
+
+This led us to the discovery of two accident hotspots: Kensington and Chelsea, known for its high frequency of accidents, and Blackpool, distinguished by the severity of its accidents. Our findings were in line with other researchers, as Blackpool has recently been recognized as the most dangerous location to drive outside of London (Antony Thrower, 2023).
+
+Therefore, using both our accident and severity indexes we were able to answer our research question, concluding that:
+
+• The City of London and Westminster were the two regions in the UK with the highest frequency of both normal and severe accidents.
+
+• Kensington and Chelsea were a region highly prone to frequent accidents, though these tended to be less severe.
+
+• Blackpool, on the other hand, was a region particularly prone to severe accidents.
+
+With these newly identified accident hotspots, we proceeded to examine how Kensington and Blackpool vary from the typical UK patterns in accident characteristics, using a comparative analysis.
+
+```{r encoding variables, echo=FALSE}
+
+# Here we are simply re encoding our variables from numerical codes into characters, this makes it easier when performing the logistic regression. It might be done in the data wrangling part, but since we added this on later in our project, we didn't want to disrupt any code that required numerical codes. Therefore we added it again here. 
+
+# This also contains a fail safe function - meaning that if the data has already been encoded, it skips the encoding step. This assures that if the user runs the file again from a saved, cleaned and encoded dataset - it won't toss an error and the LM will run perfectly!
+
+# Function to check and encode as factor if not already done
+encode_factor <- function(data, column, levels, labels) {
+  if (!is.factor(data[[column]]) || !all(levels(data[[column]]) == levels)) {
+    data[[column]] <- factor(data[[column]], levels = levels, labels = labels)
+  }
+  data
+}
+
+# Apply the function to each column
+q1_clean <- encode_factor(q1_clean, "road_type", c("1", "2", "3", "6", "7"), c("Roundabout", "One way street", "Dual carriageway", "Single carriageway", "Slip road"))
+q1_clean <- encode_factor(q1_clean, "first_road_class", c("1", "2", "3", "4", "5", "6"), c("Motorway", "A(M)", "A", "B", "C", "Unclassified"))
+q1_clean <- encode_factor(q1_clean, "special_conditions_at_site", c("0", "1", "2", "3", "4", "5", "6", "7", "-1", "9"), c("None", "Auto traffic signal - out", "Auto signal part defective", "Road sign or marking defective or obscured","Roadworks", "Road surface defective", "Oil or diesel", "Mud", "Data missing or out of range", "unknown (self reported)"))
+q1_clean <- encode_factor(q1_clean, "road_surface_conditions", c("1", "2", "3", "4", "5", "6", "7", "9"), c("Dry", "Wet or damp", "Snow", "Frost or ice", "Flood over 3cm. deep", "Oil or diesel", "Mud", "unknown (self reported)"))
+q1_clean <- encode_factor(q1_clean, "light_conditions", c("1", "4", "5", "6", "7"), c("Daylight", "Darkness - lights lit", "Darkness - lights unlit", "Darkness - no lighting", "Darkness - lighting unknown"))
+q1_clean <- encode_factor(q1_clean, "weather_conditions", c("1", "2", "3", "4", "5", "6", "7", "8"), c("Fine no high winds", "Raining no high winds", "Snowing no high winds", "Fine + high winds", "Raining + high winds", "Snowing + high winds", "Fog or mist", "Other"))
+q1_clean <- encode_factor(q1_clean, "urban_or_rural_area", c("1", "2"), c("Urban", "Rural"))
+q1_clean <- encode_factor(q1_clean, "speed_limit", c("20", "30", "40", "50", "60", "70"), c("20", "30", "40", "50", "60", "70"))
+```
+
+### 4.1.2 Spatial Characteristic Proportion Table:
+
+To achieve this, we selected spatial variables within our dataset and calculated the average proportion of accidents associated with each variable in Kensington, Blackpool, and our UK Average Baseline.
+
+The resulting table is valuable for readers, as it facilitates a comparison of the spatial characteristics most associated with locations experiencing more and less severe accidents, relative to the UK average. It's important to note, however, that this table is primarily intended to provide insights or generate hypotheses about potential factors leading to severe accidents. It does not offer conclusive evidence, as numerous other factors could have influenced these outcomes. The results of this table are discussed further along in section 4.1.4.
+
+```{r proportion table spatial characteristics, echo=FALSE}
+utla_codes <- c("E09000020", "E06000009")
+utla_names <- c("Kensington", "Blackpool")
+
+calculate_proportions <- function(dataset, utla_code, characteristic, utla_name) {
+  characteristic_sym <- rlang::sym(characteristic)
+  dataset %>%
+    filter(UTLA20CD == utla_code) %>%
+    count(!!characteristic_sym) %>%
+    mutate(proportion = n / sum(n),
+           UTLA_Name = utla_name,
+           characteristic = characteristic) %>%
+    rename(Category = !!characteristic_sym)
+}
+
+proportions_list <- list()
+characteristics <- c("urban_or_rural_area", "road_type", "weather_conditions", 
+                     "road_surface_conditions", "speed_limit", "light_conditions","special_conditions_at_site", "first_road_class" )
+
+for (i in seq_along(utla_codes)) {
+  for (char in characteristics) {
+    prop_data <- calculate_proportions(q1_clean, utla_codes[i], char, utla_names[i])
+    proportions_list[[length(proportions_list) + 1]] <- prop_data
+  }
+}
+
+combined_data <- bind_rows(proportions_list)
+
+for (char in characteristics) {
+    uk_baseline_data <- q1_clean %>%
+        count(!!rlang::sym(char)) %>%
+        mutate(proportion = n / sum(n),
+               UTLA_Name = "UK Baseline",
+               characteristic = char) %>%
+        rename(Category = !!rlang::sym(char))
+    combined_data <- bind_rows(combined_data, uk_baseline_data)
+}
+
+combined_data_wide <- combined_data %>%
+  pivot_wider(
+    names_from = UTLA_Name,
+    values_from = proportion,
+    id_cols = c(characteristic, Category)
+  ) %>%
+  mutate(across(where(is.numeric), ~scales::percent(.x, accuracy = 0.01))) %>%
+  arrange(characteristic, Category)  # Ensure characteristics are grouped together
+
+kable(
+  combined_data_wide,
+  caption = "Comparison of Accident Characteristics between Two UTLAs and UK Baseline",
+  align = 'c',
+  format = "html",
+  booktabs = TRUE  # Use booktabs for a cleaner layout
+)
+
+```
+
+```{r proportion table spatial characteristics - shiny, echo=FALSE, eval=FALSE}
+
+# Here we are identifying the UTLA's that we want to use for the comparsion. Feel free to change this if replicating this project and your data identifed other UTLAS. 
+utla_codes <- c("E09000020", "E06000009")
+utla_names <- c("Kensington", "Blackpool")
+
+# This function calculates the proportion of each characteristic for a given UTLA
+calculate_proportions <- function(dataset, utla_code, characteristic, utla_name) {
+  characteristic_sym <- rlang::sym(characteristic)
+  dataset %>%
+    filter(UTLA20CD == utla_code) %>% # Filter for specific UTLA
+    count(!!characteristic_sym) %>% # Count occurrences of each category of the characteristic
+    mutate(proportion = n / sum(n), # alculate proportions
+           UTLA_Name = utla_name, # add UTLA name for reference
+           characteristic = characteristic) %>% # Add characteristic name for reference
+    rename(Category = !!characteristic_sym) # Rename column for better readability
+}
+
+# Here we loop through each UTLA and characteristic to calculate proportions for each of them
+proportions_list <- list() # here we initalize a empty list to fill 
+characteristics <- c("urban_or_rural_area", "road_type", "weather_conditions", 
+                     "road_surface_conditions", "speed_limit", "light_conditions","special_conditions_at_site", "first_road_class" )
+
+for (i in seq_along(utla_codes)) {
+  for (char in characteristics) {
+    prop_data <- calculate_proportions(q1_clean, utla_codes[i], char, utla_names[i])
+    proportions_list[[length(proportions_list) + 1]] <- prop_data
+  }
+}
+
+# Combine all proportion data into one big dataframe
+combined_data <- bind_rows(proportions_list)
+
+# Calculate baseline proportions for the whole of UK for comparison
+for (char in characteristics) {
+    uk_baseline_data <- q1_clean %>%
+        count(!!rlang::sym(char)) %>%
+        mutate(proportion = n / sum(n), # Calculate UK wide proportions
+               UTLA_Name = "UK Baseline", # Label as UK Baseline - this is what we called our average 
+               characteristic = char) %>%
+        rename(Category = !!rlang::sym(char)) # Rename column for consistency
+    combined_data <- bind_rows(combined_data, uk_baseline_data) # Combine with UTLA data
+}
+
+# Pivot the combined data wider
+combined_data_wide <- combined_data %>%
+  pivot_wider(
+    names_from = UTLA_Name, # Spread UTLA Names into columns
+    values_from = proportion, # use proportions as values in the table
+    id_cols = c(characteristic, Category) # Keep characteristic and Category as identifier columns
+  ) %>%
+  mutate(across(where(is.numeric), ~scales::percent(.x, accuracy = 0.01))) # here we're converting to percentages 
+#creating a table
+gt_table <- gt(combined_data_wide) %>%
+  tab_header(
+    title = "Comparison of Accident Characteristics between Two UTLAs and UK Baseline"
+  )
+
+# displaying the table
+#print(gt_table)
+knitr::kable(
+  combined_data_wide,
+  caption = "Comparison of Accident Characteristics between Two UTLAs and UK Baseline",
+  align = 'c',  # Center alignment for each column
+  format = "html"  # Use HTML if you are rendering to an HTML-based format like Quarto
+)
+```
+
+```{r, eval=FALSE}
+library(gt)
+
+# Define UTLA codes
+utla_codes <- c("E09000020", "E06000009")
+
+# Function to calculate proportions for a given characteristic
+calculate_proportions <- function(dataset, utla_code, characteristic) {
+  characteristic_sym <- rlang::sym(characteristic)
+  dataset %>%
+    filter(UTLA20CD == utla_code) %>%
+    count(!!characteristic_sym) %>%
+    mutate(proportion = n / sum(n),
+           UTLA20CD = utla_code,
+           characteristic = characteristic) %>%
+    rename(Category = !!characteristic_sym)
+}
+
+# Apply the function to each characteristic for each UTLA code
+proportions_list <- list()
+characteristics <- c("urban_or_rural_area", "road_type", "weather_conditions", 
+                     "road_surface_conditions", "speed_limit")
+
+for (code in utla_codes) {
+  for (char in characteristics) {
+    prop_data <- calculate_proportions(q1_clean, code, char)
+    proportions_list[[length(proportions_list) + 1]] <- prop_data
+  }
+}
+
+# Combine all proportions into one dataframe
+combined_data <- bind_rows(proportions_list)
+
+# Example UTLA code to name mapping
+utla_names <- data.frame(
+  UTLA20CD = c("E09000020", "E06000009"),
+  UTLA_Name = c("x", "y")
+)
+
+# Add a new column to combined_data for UTLA names
+combined_data <- combined_data %>%
+  mutate(UTLA_Name = case_when(
+    UTLA20CD == "E09000020" ~ "UTLA Name 1",
+    UTLA20CD == "E06000009" ~ "UTLA Name 2"
+  ))
+
+# Pivot the data
+combined_data_wide <- combined_data %>%
+  pivot_wider(
+    names_from = UTLA_Name,
+    values_from = proportion,
+    id_cols = c(characteristic, Category)
+  ) %>%
+  mutate(across(starts_with("UTLA Name"), scales::percent, accuracy = 0.01))
+
+# Create the GT table
+gt_table <- combined_data_wide %>%
+  gt() %>%
+  tab_header(
+    title = "Comparison of Accident Characteristics between Two UTLAs"
+  ) %>%
+  cols_label(
+    `UTLA Name 1` = "UTLA Name 1 Proportion (%)",
+    `UTLA Name 2` = "UTLA Name 2 Proportion (%)",
+    Category = "Category"
+  )
+
+# Print the table
+print(gt_table)
+```
+
+### 4.1.3 Logistic Regression Results:
+
+::: {.callout-caution collapse="true"}
+## Expand to learn more about Logistic Regression
+
+Brief Overview of Logistic Regression: Logistic regression is a statistical method used for modeling the relationship between a binary dependent variable and one or more independent variables. It's particularly useful for understanding how different factors contribute to the probability of a certain event occurring. In logistic regression, we estimate the odds of the dependent variable being in one category versus another, based on the independent variables. The output is in the form of odds ratios, which indicate how the likelihood of the outcome changes with a unit change in the independent variable.
+:::
+
+Continuing from the groundwork laid by our spatial mapping and characteristic proportion analysis, we further refined our understanding of spatial characteristics and their impact on severity through the use of a logistic regression analysis. This method enabled us to assess the probability of severe accidents, as opposed to minor ones, across a range of conditions and spatial characteristics.
+
+We visualized our findings in a forest plot depicting only the statistically significant characteristics. Each point in the plot denoted an odds ratio for a specific variable, with horizontal lines representing the 95% confidence intervals. A ratio of 1 indicates neutrality, above 1 suggests an increased likelihood of a more severe accident (zone in red), and below 1 indicates a reduced likelihood (zone in green). We've also included the spatial logistical regression results. Only coefficients that are significant at a p-value \< 0.01 are in bold. Variables on the right side of the middle line have increased associated odds with being involved in a serious or fatal accident compared to a slight one. And those to the left have decreased associated odds. This gives us already a primary understanding of the association between spatial characteristics and their impact on severity. The results of this regression are discussed in section 4.1.4 in the form of a table.
+
+```{r setting reference variables for lm spatial, echo=FALSE}
+# Set baselines (reference categories) 
+q1_clean$road_type <- relevel(q1_clean$road_type, ref = "One way street")
+q1_clean$light_conditions <- relevel(q1_clean$light_conditions, ref = "Daylight")
+q1_clean$weather_conditions <- relevel(q1_clean$weather_conditions, ref = "Fine no high winds")
+q1_clean$urban_or_rural_area <- relevel(q1_clean$urban_or_rural_area, ref = "Urban")
+q1_clean$special_conditions_at_site <- relevel(q1_clean$special_conditions_at_site, ref = "None")
+q1_clean$road_surface_conditions <- relevel(q1_clean$road_surface_conditions, ref = "Dry")
+q1_clean$first_road_class <- relevel(q1_clean$first_road_class, ref = "Unclassified")
+q1_clean$speed_limit <- relevel(q1_clean$speed_limit, ref = "20")
+```
+
+```{r lm spatial, echo=FALSE, include=FALSE}
+library(car)
+q1_clean$severity_binary <- ifelse(q1_clean$accident_severity == 1 | q1_clean$accident_severity == 2, 1, 0)
+lapply(q1_clean[sapply(q1_clean, is.factor)], levels)
+sum(is.na(q1_clean))
+model_spatial <- glm(severity_binary ~ speed_limit + road_type + light_conditions + weather_conditions + urban_or_rural_area + first_road_class + special_conditions_at_site + road_surface_conditions, 
+             data = q1_clean, family = binomial())
+vif(model_spatial)
+summary(model_spatial)
+```
+
+```{r lm spatial output, echo=FALSE}
+# here we're creating the output for the logistic spatial model - you can change settings here. we've made a couple of customizations
+model_spatial %>%
+  tbl_regression(
+    exponentiate = TRUE, # this puts the values exp so that we can interpret them as log odds. 
+    pvalue_fun = ~ style_pvalue(.x, digits = 2)
+  ) %>%
+  add_n() %>% # this adds the number of observations that are in our model
+  bold_p(t = 0.01) %>% # this puts any pvalues below our threshold of 1% in bold
+  bold_labels() %>%
+  italicize_levels()
+```
+
+```{r forest plots lm spatial, echo=FALSE}
+# Get summary of the model and extract odds ratios and confidence intervals
+coef_summary <- summary(model_spatial)$coefficients
+
+# Calculate the odds ratios
+or <- exp(coef_summary[, "Estimate"])
+
+# Calculate the 95% confidence intervals - for some reason this had to be done manually since we couldn't get it to work otherwise 
+ci_lower <- exp(coef_summary[, "Estimate"] - 1.96 * coef_summary[, "Std. Error"])
+ci_upper <- exp(coef_summary[, "Estimate"] + 1.96 * coef_summary[, "Std. Error"])
+
+# here we're extracting the p values from the lm spatial model
+p_values <- coef_summary[, "Pr(>|z|)"]
+
+# Calculate number of observations (total non-NA responses for severity_binary)
+n_observations <- sum(!is.na(q1_clean$severity_binary))
+
+# Modify the exp_coef_df to include p-values and number of observations
+exp_coef_df <- data.frame(OR = or, Lower = ci_lower, Upper = ci_upper, P_Value = p_values, Observations = n_observations)
+exp_coef_df$Variable <- rownames(coef_summary)
+
+# Remove the prefix from variable names
+# Replace "your_prefix_" with the actual prefix you want to remove
+exp_coef_df$Variable <- gsub("your_prefix_", "", exp_coef_df$Variable)
+
+# Create a new label that includes variable name, p-value, and number of observations
+exp_coef_df$Label <- paste0(exp_coef_df$Variable, 
+                            "\n(p=", sprintf("%.3f", exp_coef_df$P_Value), 
+                            ", n=", exp_coef_df$Observations, ")")
+
+# Creating the forest plot  - THIS CONTAINS ALL VARIABLES 0 
+#ggplot(exp_coef_df, aes(y = Label, x = OR, xmin = Lower, xmax = Upper)) +
+ # geom_point() +
+  #geom_errorbarh(height = 0.2) +
+  #geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  #xlab("Odds Ratio") +
+  #ylab("") +  # Remove y-axis label since variable names are included in Label
+  #ggtitle("Forest plot of Odds Ratios") +
+#theme_minimal() +
+  #theme(axis.text.y = element_text(size = 8))  # Adjust text size as needed
+
+# Create a filtered data frame for statistically significant variables only
+significant_vars <- exp_coef_df %>% 
+  filter(P_Value < 0.01)
+
+# Creating the forest plot with only statistically significant variables
+ggplot(significant_vars, aes(y = Label, x = OR, xmin = Lower, xmax = Upper)) +
+  geom_point() +
+  geom_errorbarh(height = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed", color = "red") +
+  xlab("Odds Ratio") +
+  ylab("") +
+  ggtitle("Forest plot of Statistically Significant Spatial Odds Ratios") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 8)) +
+  annotate("rect", xmin = -Inf, xmax = 1, ymin = -Inf, ymax = Inf, 
+           fill = "green", alpha = 0.2) +
+  annotate("rect", xmin = 1, xmax = Inf, ymin = -Inf, ymax = Inf, 
+           fill = "red", alpha = 0.2)
+```
+
+```{r comparasion tool for lm spatial characteristics, echo=FALSE, eval=FALSE}
+# Names of the two UTLAs for comparison
+high_accident_utla_name <- "Gloucestershire"
+low_accident_utla_name <- "Coventry"
+
+# Filter the q1_clean dataset for the two selected UTLAs
+high_accident_utla_data <- q1_clean %>% filter(UTLA20NM == high_accident_utla_name)
+low_accident_utla_data <- q1_clean %>% filter(UTLA20NM == low_accident_utla_name)
+
+# Function to calculate proportions for significant characteristics
+calculate_proportions <- function(data) {
+  data %>%
+    summarise(
+      Proportion_Roundabout = mean(road_type == "Roundabout", na.rm = TRUE),
+      Proportion_Single_Carriageway = mean(road_type == "Single carriageway", na.rm = TRUE),
+      Proportion_Darkness_Lights_Lit = mean(light_conditions == "Darkness - lights lit", na.rm = TRUE),
+      Proportion_Darkness_Lights_Unlit = mean(light_conditions == "Darkness - lights unlit", na.rm = TRUE),
+      Proportion_Darkness_No_Lighting = mean(light_conditions == "Darkness - no lighting", na.rm = TRUE),
+      Proportion_Raining_No_High_Winds = mean(weather_conditions == "Raining no high winds", na.rm = TRUE),
+      Proportion_Snowing_No_High_Winds = mean(weather_conditions == "Snowing no high winds", na.rm = TRUE),
+      Proportion_Fine_High_Winds = mean(weather_conditions == "Fine + high winds", na.rm = TRUE),
+      Proportion_Raining_High_Winds = mean(weather_conditions == "Raining + high winds", na.rm = TRUE),
+      Proportion_Snowing_High_Winds = mean(weather_conditions == "Snowing + high winds", na.rm = TRUE),
+      Proportion_Road_Surface_Defective = mean(first_road_class == "Road surface defective", na.rm = TRUE),
+      Proportion_Frost_or_Ice = mean(road_surface_conditions == "Frost or ice", na.rm = TRUE),
+      Proportion_Rural = mean(urban_or_rural_area == "Rural", na.rm = TRUE),
+    )
+}
+
+# Calculate proportions for each UTLA
+high_accident_proportions <- calculate_proportions(high_accident_utla_data)
+low_accident_proportions <- calculate_proportions(low_accident_utla_data)
+
+# Combine results for comparison
+proportion_comparison <- rbind(
+  High_Severity_Index = high_accident_proportions,
+  Low_Severity_Index = low_accident_proportions
+)
+
+# View the comparison
+kable(proportion_comparison, digits = 4)
+```
+
+### 4.1.4 Summary of our Proportion Table and Logistic Regression
+
+We now offer a cohesive summary that merges insights from the Spatial Characteristic Proportion Table with those from our logistic regression analysis, providing a thorough overview. While this synthesis aligns some spatial characteristics with the regression results, it also reveals contradictions, as there are countless variables (not included in our project) that may have impacted accidents occurrences and their severity. These findings encourage readers to develop their own hypotheses regarding the variations in accident frequency and severity, acknowledging that some aspects may extend beyond the scope of our current analysis.
+
++-------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Spatial Variables | Results from Proportion Table                                                                                                                                                                                                                                                                                                            | Results from Logistic Regression                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
++===================+==========================================================================================================================================================================================================================================================================================================================================+================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================================+
+| Rural vs. Urban   | -   Kensington reported 98% and Blackpool 95.86% of accidents in urban areas, both notably higher than the UK baseline of 66.85%.                                                                                                                                                                                                        | -   Rural areas increased the odds of severe accidents with a log odds of 1.18                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
++-------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Road Types        | -   Kensington exhibited a higher incidence of accidents on dual carriageways (19%) compared to the baseline (15.75%), possibly indicating issues related to safety features or increased traffic volume on these roads.                                                                                                                 | -   Motorways were associated with lower odds of severe accidents (OR 0.79) compared to single carriageways, which often correlate with higher severity incidents. As mentioned previously, motorways offer increased security measures to protect from oncoming traffic, whereas single carriageways are associated to high-speed limits and limited safety measures.                                                                                                                                                                                         |
+|                   |                                                                                                                                                                                                                                                                                                                                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|                   | <!-- -->                                                                                                                                                                                                                                                                                                                                 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|                   |                                                                                                                                                                                                                                                                                                                                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|                   | -   Blackpool had a significantly higher percentage of accidents on single carriageways (86.94%) compared to Kensington (64.20%) and the UK average (74.11%).                                                                                                                                                                            |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|                   |                                                                                                                                                                                                                                                                                                                                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|                   | -   A higher proportion of accidents in Blackpool occurred on "unclassified roads" (54.78%), compared to Kensington (16.60%) and the UK baseline (35.60%). This may suggest a lower level of road network organization and potentially less oversight or regulation by authorities in Blackpool                                          |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
++-------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Speed Limits      | -   In Kensington, a substantial proportion of accidents occurred in 20 mph zones (67%), possibly indicative of traffic calming measures in place within a dense urban environment. In contrast, Blackpool saw a much higher percentage of accidents in 30 mph zones (85.35%) compared to Kensington (31.40%) and the baseline (54.57%). | -   Higher speed limits generally correlated with increased odds of severe accidents. However, the risk diminished at 70 mph (a typical speed on dual carriageways and motorways that offer safety barriers) compared to 60 mph, possibly due to safer road designs and more careful driving at higher speeds. This confirms that locations with roads that have higher speed limits could be more prone to severe road accidents, whereas locations with lower speed limits could see less severe accidents.                                                  |
++-------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Light Conditions  | -   Both Kensington and Blackpool followed the UK baseline trend, with their majority of accidents occurring during daylight hours.                                                                                                                                                                                                      | -   Darkness substantially raised the odds of severe accidents, as areas with and without streetlights experienced higher odds of more severe accidents compared to accidents during daytime. However, it is to be noted that locations with streetlights still experienced lower odds of more serious accidents compared to locations without any form of lighting. Therefore, we can make the conclusion that locations that have poorly lit or unlit roads will have a higher tendence for more severe accidents compared to locations with well-lit roads. |
++-------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| Road Conditions   | -   Special conditions at the accident site did not vary significantly among Kensington, Blackpool, and the UK baseline.                                                                                                                                                                                                                 | -   Sites with defective road conditions increased the likelihood of severe accidents compared to slight ones, underscoring the importance of proper indication of road maintenance. This finding suggests that locations with worse road conditions might find themselves experiencing more severe accidents compared to locations with roads in good conditions.                                                                                                                                                                                             |
++-------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+: Summary of our Proportion Table and Logistic Regression
+
+::: callout-note
+*Unclassified Roads (UCRs): Unclassified roads are typically minor roads, lanes, or tracks that are not designated as A or B roads. They are often rural or local roads that may have limited traffic and may not be paved or well-maintained.*
+:::
+
+### 4.1.5 Key Findings on Spatial Characteristics in Road Accidents
+
+In our spatial analysis, we identified spatial locations that were most prone to accidents and severe accidents. In this section, we provide a summary of the key findings that answer our research question.
+
+*Identification of Prone Locations:*
+
+· The City of London and Westminster emerged as regions with the highest frequency of both regular and severe accidents. This high incidence is likely influenced by their unique urban dynamics, which may include heavy pedestrian and vehicle traffic, a large influx of daily commuters and tourists.
+
+· Kensington and Chelsea were identified as areas with a high frequency of accidents, although these tended to be less severe.
+
+· Blackpool stood out for its high severity index, indicating a propensity for more severe accidents.
+
+*Spatial Characteristics:*
+
+· **Blackpool:** High frequency of accidents in urban areas (95.86%), with many occurring on single carriageways (86.94%) and a notable number on unclassified roads (54.78%). A large portion of these accidents happened in 30 mph zones (85.35%).
+
+::: callout-note
+*These characteristics are independent observations. An accident in Blackpool might occur under any of these conditions, and they are not always mutually inclusive (e.g. an accident might happen in an urban area at 30 mph or in a rural setting at the same speed limit)*
+:::
+
+· **Kensington:** Significant proportion of accidents were urban (98%), with a high number on dual carriageways (19%) and predominantly occurring in 20 mph zones (67%).
+
+::: callout-note
+*Important note: Similar to Blackpool, these characteristics are individual observations. They present possible scenarios of accidents but do not imply that all accidents in Kensington share these exact characteristics. An accident could occur in a different setting or under varying conditions*.
+:::
+
+## 4.2 Research Question 2: What temporal trends can we identify in road accidents in the UK? Can we identify the most dangerous times to be on the road ?
+
+As stated in previously, our initial objective was to gain a fundamental understanding of temporal aspects in accidents through our exploratory analysis. This initial phase provided us with valuable intuitions into the temporal factors that warranted further investigation.
+
+For answering this research question, we took a more in-depth approach by following this methodology:
+
+1.  We started by visualizing the presence of any noticeable trends and their potential correlation with accident severity.
+2.  After the visual assessment, we proceeded to statistically validate these identified trends.
+3.  Finally, we conducted a logistic regression analysis to determine how temporal variables relate to the likelihood of being involved in a severe accident.
+
+### 4.2.1 Time of Day
+
+In our analysis, we revisited the insights obtained during our EDA. Initially, we identified two significant 'peaks' in accident occurrences : one between 7 a.m. and 8 a.m. and another from 3 p.m. to 6 p.m. Therefore, we decided to create four distinct time ranges: early morning (0-6 AM), morning (6-12 AM), afternoon (12-6 PM), and night (6-12 PM) to capture the nuances of accident distributions throughout the day and night effectively.
+
+```{r avg acc by time ranges, echo=FALSE, warning=FALSE}
+accidents_by_time <- q2_clean %>%
+  group_by(time_ranges) %>%
+  summarise(Total_Number_of_Accidents = n()) %>%
+  ungroup()
+
+# Calculate the number of unique days in your dataset
+number_of_days <- q2_clean %>%
+  summarise(Days = n_distinct(date)) %>%
+  pull(Days)
+
+# Calculate the average number of accidents per time range
+accidents_by_time <- accidents_by_time %>%
+  mutate(Average_Number_of_Accidents = Total_Number_of_Accidents / number_of_days)
+
+# Calculate overall average for time ranges
+overall_avg_time <- mean(accidents_by_time$Average_Number_of_Accidents)
+
+# Determine the upper limit for the y-axis
+upper_limit_time <- max(accidents_by_time$Average_Number_of_Accidents) + max(accidents_by_time$Average_Number_of_Accidents) * 0.1
+
+# This is here to calculate the numbers that will be used with the inline code - not necessary if you are just looking to recreate the graphic!! 
+avg_accidents_afternoon <- accidents_by_time %>%
+  filter(time_ranges == "12-6 PM") %>%
+  pull(Average_Number_of_Accidents)
+
+# Create the line plot with improved data point visibility, adjusted y-axis limits, and average line
+ggplot(accidents_by_time, aes(x = time_ranges, y = Average_Number_of_Accidents, group = 1)) +
+  geom_line(color = "#4C4E4D") +  # Line plot with specified color
+  geom_point(color = "#4C4E4D", size = 3) +  # Data points with specified color and increased size
+  geom_text(aes(label = round(Average_Number_of_Accidents, 2)),
+            vjust = -1.5, size = 3, color = "#4C4E4D", hjust = 0.5, 
+            label.padding = unit(0.5, "lines"), 
+            label.size = 0,  # Remove border around text
+            label.r = unit(0.15, "lines"),  # Rounded corners
+            fill = "white") +  # Background color for labels
+  geom_hline(yintercept = overall_avg_time, linetype = "dashed", color = "red", size = 1) +  # Overall average line
+  labs(
+    x = "Time Range",
+    y = "Average Number of Accidents",
+    title = "Average Number of Accidents by Time Range"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "#f1f3f2", colour = "#f1f3f2"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  ylim(0, upper_limit_time)
+```
+
+We began our analysis by plotting a line chart representing the average number of accidents across different time ranges. This analysis echoed our earlier findings, as it once again highlighted the following pattern: accidents were more prevalent during the afternoon (12-6 PM) time slot, with an average of `r avg_accidents_afternoon` accidents which is significantly higher than the overall average of `r overall_avg_time` accidents across all time ranges. This temporal finding showed that afternoons between 12-6PM were associated with higher numbers of accidents.
+
+```{r time range proportion}
+# Grouping accidents by time ranges and severity to see the distribution
+accidents_by_time_severity <- q2_clean %>%
+  group_by(time_ranges, accident_severity_chr) %>%
+  summarise(count = n(), .groups = 'drop') # Counting the number of accidents in each severity category for every time range
+
+# Now, let's find out what proportion of each time range's accidents fall into each severity category
+accidents_by_time_severity <- accidents_by_time_severity %>%
+  group_by(time_ranges) %>%
+  mutate(proportion = count / sum(count)) %>%
+  ungroup() # This gives us the percentage of, say, fatal accidents out of all accidents in a given time range
+
+
+
+# These next blocks are for in-line text in the report. We're specifically focusing on early morning data
+early_morning_data <- accidents_by_time_severity %>%
+  filter(time_ranges == "0-6 AM") %>%
+  filter(accident_severity_chr %in% c("Fatal", "Serious")) # Focusing on the serious and fatal accidents in the early morning
+# These next blocks are for in-line text in the report. We're specifically focusing on early morning data
+fatal_proportion_early_morning <- early_morning_data %>%
+  filter(accident_severity_chr == "Fatal") %>%
+  pull(proportion) %>%
+  first() # Grabbing the proportion value for 'Fatal'
+# These next blocks are for in-line text in the report. We're specifically focusing on early morning data
+serious_proportion_early_morning <- early_morning_data %>%
+  filter(accident_severity_chr == "Serious") %>%
+  pull(proportion) %>%
+  first() # Getting the proportion value for 'Serious'
+
+
+
+
+# Finally, let's visualize all this data
+ggplot(accidents_by_time_severity, aes(x = time_ranges, y = proportion, fill = accident_severity_chr)) +
+  geom_bar(stat = "identity", position = "fill") + # A stacked bar plot to show proportions of severity categories within each time range
+  geom_text(aes(label = scales::percent(proportion, accuracy = 1)), 
+            position = position_fill(vjust = 0.5), 
+            color = "black", 
+            size = 3) + # Adding text labels to our bars for clarity
+  scale_fill_manual(
+    values = c("Fatal" = "#FFEB00", "Serious" = "#BBBBBB", "Slight" = "#4C4E4D"),
+    name = "Severity of Accident" # Custom colors for our bar plot
+  ) +
+  labs(
+    x = "Time Range",
+    y = "Proportion of Accidents",
+    title = "Proportion of Accidents by Time Range per Severity" # Setting up the title and axis labels
+  ) +
+  theme_minimal() + # A clean, minimal theme for the plot
+  theme(legend.position = "bottom") # Positioning the legend at the bottom
+```
+
+Then, we aimed to go beyond just identifying the busiest hours for accidents and also understand how they affected accident severity. Therefore, we created a proportional stacked bargraph (otherwise known as a 100% stacked bar graph) depicting the proportion of accidents by severity within each time range (the use of proportions for this comparison was important as the distribution of accidents were not equal across the time ranges. Hence, conducting a straightforward comparison of accident counts across various severity levels within the different time ranges would have introduced significant bias in our analysis).
+
+From this chart, an intriguing observation emerged. The proportion of fatal (`r scales::percent(fatal_proportion_early_morning, accuracy = 1)`) and serious (`r scales::percent(serious_proportion_early_morning, accuracy = 1)`) accidents were highest during the early morning (0-6 AM) time range. This was surprising because this period is typically associated with lower traffic volumes, yet it had a higher proportion of severe accidents. This visually allowed us to conclude that earlier hours of the day were associated with more severe accidents compared to later hours of the day.
+
+```{r time range chi PROPORTIONS, echo=FALSE}
+# column: margin
+# Firstly here we're calculating the overall proportions of each accident severity type across all time ranges
+overall_proportions <- q2_clean %>%
+  group_by(accident_severity_chr) %>%
+  summarise(total_severity_count = n()) %>%
+  mutate(overall_proportion = total_severity_count / sum(total_severity_count))
+
+# Next up, we're organizing our data by both time range and accident severity
+accidents_by_time_severity <- q2_clean %>%
+  group_by(time_ranges, accident_severity_chr) %>%
+  summarise(count = n(), .groups = 'drop') 
+# This will help us see how many accidents of each severity type happened in each time range
+
+# Now, let's get the total accident count for each time range, no matter the severity
+total_accidents_by_time <- accidents_by_time_severity %>%
+  group_by(time_ranges) %>%
+  summarise(total_count = sum(count)) %>%
+  ungroup()
+# This gives us the big picture of how many accidents happened in each time range
+
+# Here's where we start prepping for our Chi-Squared tests. We need an empty dataframe to store our results
+chi_sq_results <- data.frame()
+
+for (severity in c("Fatal", "Serious", "Slight")) {
+    # For each severity type, we're going to filter our data and make a table of observed counts
+    severity_data <- accidents_by_time_severity %>%
+                     filter(accident_severity_chr == severity) %>%
+                     select(time_ranges, count)
+
+    # This table combines our total counts and observed counts
+    severity_table_complete <- merge(total_accidents_by_time[, c("time_ranges")], 
+                                    severity_data, 
+                                    by = "time_ranges", 
+                                    all.x = TRUE)
+    severity_table_complete[is.na(severity_table_complete)] <- 0
+
+    # We calculate expected counts based on the overall proportions we found earlier
+    expected_proportion <- overall_proportions$overall_proportion[overall_proportions$accident_severity_chr == severity]
+    expected_counts <- total_accidents_by_time %>%
+                       mutate(expected_count = total_count * expected_proportion)
+
+    # Now we do the Chi-Squared test to see if there's a significant difference in accident severity distribution across time ranges
+    chi_squared_test <- chisq.test(severity_table_complete$count, 
+                                   p = expected_counts$expected_count / sum(expected_counts$expected_count))
+
+    # Store the results of each test in our results dataframe
+    chi_sq_results <- rbind(chi_sq_results, 
+                            data.frame(Severity = severity, 
+                                       Chi_Squared = chi_squared_test$statistic, 
+                                       DF = chi_squared_test$parameter, 
+                                       P_Value = chi_squared_test$p.value))
+}
+# We adjust the p-values for readability. If it's less than 0.01, we just say '<0.01'
+chi_sq_results$P_Value <- ifelse(chi_sq_results$P_Value < 0.01, "<0.01", chi_sq_results$P_Value)
+
+# Get rid of the row names, they're not needed and just clutter things up
+rownames(chi_sq_results) <- NULL
+
+# Now let's put these results in a nice, readable table
+chi_sq_table <- kable(chi_sq_results, format = "simple", caption = "Chi-Squared Test Results")
+
+# And finally, print out our table
+chi_sq_table
+```
+
+To go one step further, we confirmed our findings using a statistical test. We chose the chi-square test of independence adjusted to proportions. Our method involved first calculating the overall proportion of each accident severity type (slight, serious and fatal) across all the accidents in 2022. We then used these calculated proportions to estimate the expected frequencies of each of the accidents per severity level.
+
+::: {.callout-caution collapse="true"}
+## Expand to learn more about Chi Square Tests
+
+Brief Overview of Chi-Square Test of Independence of Proportions: The chi-square test of independence is a statistical tool used to determine whether there is a significant association between two categorical variables. In this test, we compare observed proportions in different categories against expected proportions that would occur if the variables were independent of each other. Essentially, it answers the question: "Are the differences in proportions just due to chance, or do they reflect a true association between the variables?" The test calculates a chi-square statistic, which measures the discrepancies between observed and expected frequencies. A significant result suggests a noteworthy relationship between the variables being studied.
+
+In Our Case: We applied this test to explore the relationship between the time of day and the severity of traffic accidents (categorized as slight, serious, and fatal). Our aim was to ascertain whether the proportion of accidents' severities varied significantly across different times of the day, which could indicate a potential link between when an accident occurs and how severe it is.
+:::
+
+The chi-square tests reinforced the significance of this discovery, showing a strong association between the time of day and the severity level of an accident across all severity levels (see chi square results above). This showed that the time of day had a statistically significant association with the level of severity of an accident.
+
+```{r, echo=FALSE, include=FALSE}
+# Here we are telling the computer that there is a logical order to the hours - putting it as a factor
+q2_clean$time_ranges <- as.factor(q2_clean$time_ranges)
+
+# Here we are setting "0-6 AM" as the reference level - feel free to change this if you want, however in my personal opinion, given that theres a logical order to the hours I'd keep it like this
+q2_clean$time_ranges <- relevel(q2_clean$time_ranges, ref = "0-6 AM")
+
+# This recodes severity into a binary outcome for logistic regression (Serious or Fatal vs. Slight)
+q2_clean$binary_severity <- ifelse(q2_clean$accident_severity_chr %in% c("Serious", "Fatal"), 1, 0)
+
+# Here we call the logit regression with the time range of the day as the variable
+logit_model_time_ranges <- glm(binary_severity ~ time_ranges, data = q2_clean, family = binomial())
+
+# This prints the summary, you can show this in your quarto if you want this if you want, but we will use another code below, therefore this will be hidden for the final viewer of the rendered document
+summary(logit_model_time_ranges)
+
+#These are variables that we are creating so that we can directly reference numbers in our code - if you are just recreating the calculations, feel free to delete. 
+logit_model_summary <- summary(logit_model_time_ranges)
+odds_ratios <- exp(coef(logit_model_summary))
+conf_int <- exp(confint(logit_model_time_ranges))
+
+# Creating a data frame for easy access when referencing the results in the text below - again plese disregard if you are just looking for the computation of the LM model
+results_df <- data.frame(
+  Time_Range = rownames(odds_ratios),
+  Odds_Ratio = odds_ratios[, 1],
+  CI_Lower = conf_int[, 1],
+  CI_Upper = conf_int[, 2]
+)
+results_df$Time_Range <- gsub("time_ranges", "", results_df$Time_Range)  
+rownames(results_df) <- results_df$Time_Range  
+```
+
+To confirm these findings and dive deeper, we set out to understand whether the time range in which an accident occurred increased the odds of being in a more severe accident (serious or fatal). Therefore, we conducted a logistic regression using the time ranges and encoded with the following outcomes: 0 representing a slight accident and 1 representing a serious or fatal accident.
+
+```{r lm hod output}
+# column: margin
+logit_model_time_ranges %>%
+  tbl_regression(
+    exponentiate = TRUE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 2)
+  ) %>%
+  add_n() %>% 
+  bold_p(t = 0.01) %>%
+  bold_labels() %>%
+  italicize_levels()
+```
+
+Examining the logistic output above, we found that all coefficients were highly significant (with p-values \<0.001). Our reference point, representing the time period from 0-6 AM, had a log odd of 1. Notably, we observed that between 6-12 AM, the odds of being involved in a serious or fatal accident decreased significantly to 0.66. Afterward, the odds went back up towards the end of the day (12-6PM: 0.7 & 6-12PM: 0.75). The statistical significance of these values could also be interpreted through their confidence intervals (CI), where none of them passed over the value of 1 (e.g., 6-12 AM CI: 0.71 - 0.8).
+
+Combining our findings from our visual, statistical and regression analysis, it became clear that while the afternoon (12-6 PM) time range had the highest average number of accidents, accidents occurring early morning (0-6 AM) though fewer in number, were more likely to be severe. This discrepancy could be attributed to several factors, such as driver fatigue, alcohol abuse, or compromised visibility (as found in our spatial analysis), more prevalent during late-night to early-morning hours.
+
+While our findings demonstrated robust associations, it's essential to acknowledge that our analysis focused solely on time ranges. Consequently, we cannot exclude the possibility that other variables, not accounted for in our model, may have influenced accident severity during these specific time periods.
+
+### 4.2.2 Day of the Week 
+
+During our exploratory data analysis, we noticed a consistent increase in the frequency of accidents across different days of the week. We decided to investigate this upward trend and whether there were statistically significant variations in accident severity based on the day of the week. (N.B: this subsequent analysis follows the same methodology that was laid out in the time range analysis)
+
+```{r avg accidents per dow, echo=FALSE, message=FALSE}
+number_of_weeks <- length(unique(floor_date(q2_clean$date, unit = "week")))
+
+accidents_by_day <- q2_clean %>%
+  group_by(day_name) %>%
+  summarise(
+    Total_Number_of_Accidents = n(),
+    Average_Number_of_Accidents = Total_Number_of_Accidents / number_of_weeks) %>%
+  ungroup()
+
+overall_avg <- mean(accidents_by_day$Average_Number_of_Accidents)
+
+# THE FOLLOWING THREE LINES REFER TO INLINE TEXT CODING - PLEASE DISREGARD IF NOT APPLICABLE TO YOU
+max_avg_accidents <- max(accidents_by_day$Average_Number_of_Accidents)
+day_with_max_avg <- accidents_by_day$day_name[which.max(accidents_by_day$Average_Number_of_Accidents)]
+
+# Determine the upper limit for the y-axis
+upper_limit <- max(accidents_by_day$Average_Number_of_Accidents) + max(accidents_by_day$Average_Number_of_Accidents) * 0.1
+
+# Plot with improved data point visibility and adjusted y-axis limits
+ggplot(accidents_by_day, aes(x = day_name, y = Average_Number_of_Accidents, group = 1)) +
+  geom_line(color = "#4C4E4D") +  # Line plot with specified color
+  geom_point(color = "#4C4E4D", size = 3) +  # Data points with specified color and increased size
+  geom_hline(yintercept = overall_avg, linetype = "dashed", color = "red", size = 1) +  # Overall average line
+  geom_text(aes(label = paste("Avg:", round(Average_Number_of_Accidents, 2))),
+            vjust = -1.5, size = 3, color = "#4C4E4D", hjust = 0.5, 
+            label.padding = unit(0.5, "lines"), 
+            label.size = 0,  # Remove border around text
+            label.r = unit(0.15, "lines"),  # Rounded corners
+            fill = "white") +  # Background color for labels
+  labs(
+    x = "Day of Week",
+    y = "Average Number of Accidents",
+    title = "Average Number of Accidents by Day of the Week"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "#f1f3f2", colour = "#f1f3f2"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  ylim(200, upper_limit)  # Set y-axis limits
+```
+
+Looking at the line chart above, depicting the average number of accidents per day of the week, it became evident that Monday consistently stood out with a notably lower average number of accidents throughout the year compared to the baseline average. Conversely, Saturday emerged as the day with the highest average, reaching `r round(max_avg_accidents, 2)` accidents. This trend exhibited a clear weekly pattern, with accidents gradually increasing from Monday onwards and then experiencing a significant drop on Sundays. From this chart, we could conclude that Saturdays consistently recorded the highest average number of accidents compared to any other day of the week.
+
+```{r dow proportion chart}
+# here we are creating the count per day and severity
+accidents_by_day_severity <- q2_clean %>%
+  group_by(day_name, accident_severity_chr) %>%
+  tally(name = "count")
+
+# Calculate the total accidents per day
+total_accidents_by_day <- accidents_by_day_severity %>%
+  group_by(day_name) %>%
+  summarise(total_count = sum(count))
+
+# Join to get the total accidents per day alongside the count per severity
+accidents_by_day_severity <- accidents_by_day_severity %>%
+  left_join(total_accidents_by_day, by = "day_name")
+
+# Calculate the proportion of each severity type per day
+accidents_by_day_severity <- accidents_by_day_severity %>%
+  mutate(proportion = count / total_count)
+
+# Create the pivot table
+severity_proportions_pivot_day <- accidents_by_day_severity %>%
+  select(day_name, accident_severity_chr, proportion) %>%
+  pivot_wider(names_from = accident_severity_chr, values_from = proportion)
+
+# View the pivot table
+severity_proportions_pivot_day
+
+# THE FOLLOWING TWO CODE BLOCKS REFER TO CREATING VARIABLES FOR INLINE TEXT CODING - PLEASE DISREGARD FOR CALCULATIONS
+monday_proportions <- severity_proportions_pivot_day %>%
+  filter(day_name == "Monday") %>%
+  summarise(Fatal = Fatal, Serious = Serious)
+
+sunday_proportions <- severity_proportions_pivot_day %>%
+  filter(day_name == "Sunday") %>%
+  summarise(Fatal = Fatal, Serious = Serious)
+
+
+ggplot(accidents_by_day_severity, aes(x = day_name, y = proportion, fill = accident_severity_chr)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(aes(label = scales::percent(proportion, accuracy = 0.1)), 
+            position = position_fill(vjust = 0.5), 
+            color = "black", 
+            size = 3) +
+  scale_fill_manual(
+    values = c(Fatal = "#FFEB00",
+    Serious = "#BBBBBB",
+    Slight = "#4C4E4D"),
+    name = "Severity of Accident"
+  ) +
+  labs(
+    x = "Day of Week",
+    y = "Proportion of Accidents",
+    title = "Proportion of Accidents by DOW per Severity"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.background = element_rect(fill = "#f1f3f2", colour = "#f1f3f2"))
+```
+
+Next, continuing our analysis, we set out to determine if the day of the week had any association with the level of severity of its accidents. Interestingly, despite not having the highest accident frequency, Mondays exhibited the highest proportions of fatal (`r scales::percent(monday_proportions$Fatal, accuracy = 0.1)`) and serious (`r scales::percent(monday_proportions$Serious, accuracy = 0.1)`) accidents, while Sundays followed closely with a relatively similar proportion of fatal (`r scales::percent(sunday_proportions$Fatal, accuracy = 0.1)`) and serious (`r scales::percent(sunday_proportions$Serious, accuracy = 0.1)`) accidents.
+
+This interesting discovery suggested that even though Saturdays had the highest number of accidents during the week, the severity of these accidents was generally lower compared to those occurring on Mondays. Conversely, despite the lower accident count on Mondays, a disproportionately higher percentage of these incidents resulted in more severe injuries when compared to other days of the week.
+
+```{r dow chi PROPORTION, echo=FALSE}
+# column: margin
+overall_proportions <- q2_clean %>%
+  group_by(accident_severity_chr) %>%
+  summarise(total_severity_count = n(), .groups = 'drop') %>%
+  mutate(overall_proportion = total_severity_count / sum(total_severity_count))
+
+
+chi_sq_results <- data.frame()
+
+severity_types <- c("Fatal", "Serious", "Slight")
+
+for (severity in severity_types) {
+    # Filter data for each severity type
+    sub_data <- subset(q2_clean, accident_severity_chr == severity)
+    
+    # Observed counts for each day of the week
+    observed_counts <- table(sub_data$day_name)
+    
+    # Total counts for each day of the week (regardless of severity)
+    total_counts_by_day <- table(q2_clean$day_name)
+    
+    # Expected counts based on overall proportions
+    expected_proportion <- overall_proportions$overall_proportion[overall_proportions$accident_severity_chr == severity]
+    expected_counts <- expected_proportion * total_counts_by_day
+    
+    # Perform Chi-Squared test
+    chi_squared_test <- chisq.test(observed_counts, p = expected_counts / sum(expected_counts))
+    
+    # Store the results
+    chi_sq_results <- rbind(chi_sq_results, 
+                            data.frame(Severity = severity, 
+                                       Chi_Squared = chi_squared_test$statistic, 
+                                       DF = chi_squared_test$parameter, 
+                                       P_Value = chi_squared_test$p.value))
+}
+
+
+# This makes it so that it shows <0.01 if the p value is smaller than this since this is the level that we were testing at. 
+chi_sq_results$P_Value <- ifelse(chi_sq_results$P_Value < 0.01, "<0.01", chi_sq_results$P_Value)
+
+# This removes the pesky row names that are a result of the function that we ran before. If you change the chi square method, you shouldn't have to do this - but I couldn't get around it. 
+rownames(chi_sq_results) <- NULL
+
+chi_sq_table <- kable(chi_sq_results, format = "simple", caption = "Chi-Squared Test Results for the Day of the Week")
+
+# Print the table
+chi_sq_table
+```
+
+Continuing with our analysis, we validated our findings by conducting a Chi-Squared test of independence based on proportions. This test affirmed a robust and significant association between the day of the week and the severity of accidents that occurred on those days as all p-values for the three levels of severity were below the 1% significance threshold (see chi results above).
+
+Applying the same methodology, we conducted another logistic regression analysis, using "slight" accidents as the baseline (0) and designating serious/fatal accidents as the event of interest (1). This not only reaffirmed our earlier findings but also unveiled additional information, as presented in the regression table below.
+
+```{r dow lm model, echo=FALSE, include=FALSE}
+q2_clean$binary_severity <- ifelse(q2_clean$accident_severity_chr == "Fatal" | q2_clean$accident_severity_chr == "Serious", 1, 0)
+
+# Logistic regression with the day of the week
+logit_model_DOW <- glm(binary_severity ~ day_name, data = q2_clean, family = binomial())
+
+# here we're printing the summary output for the lm
+summary(logit_model_DOW)
+
+# the following two blocks are for inline text code - disregard for calculations
+logit_model_DOW_summary <- summary(logit_model_DOW)
+coefficients_summary <- logit_model_DOW_summary$coefficients
+
+# Extract the p-values and ORs for Sunday
+sunday_p_value <- coefficients_summary["day_nameSunday", "Pr(>|z|)"]
+sunday_or <- exp(coefficients_summary["day_nameSunday", "Estimate"])
+```
+
+```{r lm dow output}
+# column: margin
+logit_model_DOW %>%
+  tbl_regression(
+    exponentiate = TRUE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 2)
+  ) %>%
+  add_n() %>% 
+  bold_p(t = 0.01) %>%
+  bold_labels() %>%
+  italicize_levels()
+```
+
+Monday (the most dangerous day of the week) was designated as the reference day with a log odd set at 1, serving as the baseline for comparison with all other days. In contrast to Monday, every other day of the week exhibited reduced odds of experiencing a severe or fatal accident, with odds ratios (ORs) consistently below 1. These associations were statistically significant at a 1% level, except for Sunday, which had an OR of `r round(sunday_or, 2)` and a p-value of `r round(sunday_p_value, 3)`, suggesting a weaker but signifigant association when taking 5% as the threshold. These results confirm our temporal findings that Monday remains the day of the week that is the most associated to dangerous road accidents.
+
+### 4.2.3 Month of Year:
+
+Drawing upon the same methodology used for analyzing day-of-the-week and time-of-day patterns, we've now turned our focus to temporal trends related to months, while also incorporating the factor of accident severity into our analysis.
+
+```{r dist of accidents per moy, echo=TRUE}
+accidents_by_month <- q2_clean %>%
+  group_by(month_name) %>%
+  summarise(Total_Number_of_Accidents = n()) %>%
+  ungroup()
+
+overall_avg_month <- mean(accidents_by_month$Total_Number_of_Accidents)
+
+# Determine the upper limit for the y-axis
+upper_limit_month <- max(accidents_by_month$Total_Number_of_Accidents) + max(accidents_by_month$Total_Number_of_Accidents) * 0.05
+
+# this code is for inline text code - please disregard for non calculation purpouses
+november_accidents <- accidents_by_month$Total_Number_of_Accidents[accidents_by_month$month_name == "November"]
+# this code is for inline text code - please disregard for non calculation purpouses
+overall_avg_month <- mean(accidents_by_month$Total_Number_of_Accidents)
+
+# Create the line plot with improved data point visibility, adjusted y-axis limits, and average line
+ggplot(accidents_by_month, aes(x = month_name, y = Total_Number_of_Accidents, group = 1)) +
+  geom_line(color = "#4C4E4D") +  # Line plot with specified color
+  geom_point(color = "#4C4E4D", size = 3) +  # Data points with specified color and increased size
+  geom_text(aes(label = Total_Number_of_Accidents),
+            vjust = -1.5, size = 3, color = "#4C4E4D", hjust = 0.5, 
+            label.padding = unit(0.5, "lines"), 
+            label.size = 0,  # Remove border around text
+            label.r = unit(0.15, "lines"),  # Rounded corners
+            fill = "white") +  # Background color for labels
+  geom_hline(yintercept = overall_avg_month, linetype = "dashed", color = "red", size = 1) +  # Overall average line
+  labs(
+    x = "Month of the Year",
+    y = "Total Number of Accidents",
+    title = "Total Number of Accidents by Month of the Year"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "#f1f3f2", colour = "#f1f3f2"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  ylim(7000, upper_limit_month)  # Set y-axis limits
+```
+
+Our initial observation from this line chart above, illustrating the number of accidents per month of the year, was a significant peak in November, which notably exceeded the average monthly count with `r round(november_accidents, 0)` accidents compared to an overall monthly average of `r round(overall_avg_month, 0)`. We also observed a period of high volatility in accidents between January and April, followed by a consistent increase from August to November.
+
+This plot confirmed the trend that the months of September, October, and November consistently had the highest number of accidents throughout the year. Considering our detailed analysis of the year 2022, it would be interesting to investigate whether this trend held across different years, which would provide further evidence supporting our finding that November consistently experiences the highest number of accidents in the year.
+
+```{r moy proportion, echo=FALSE}
+accidents_by_month_severity <- q2_clean %>%
+  group_by(month_name, accident_severity_chr) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Calculate the total accidents per day
+total_accidents_by_month <- accidents_by_month_severity %>%
+  group_by(month_name) %>%
+  summarise(total_count = sum(count))
+
+# Join to get the total accidents per day alongside the count per severity
+accidents_by_month_severity <- accidents_by_month_severity %>%
+  left_join(total_accidents_by_month, by = "month_name")
+
+# Calculate the proportion of each severity type per day
+accidents_by_month_severity <- accidents_by_month_severity %>%
+  mutate(proportion = count / total_count)
+
+ggplot(accidents_by_month_severity, aes(x = month_name, y = proportion, fill = accident_severity_chr)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(aes(label = scales::percent(proportion, accuracy = 0.1)), 
+            position = position_fill(vjust = 0.5), 
+            color = "black", 
+            size = 3) +
+  scale_fill_manual(
+    values = c(Fatal = "#FFEB00",
+               Serious = "#BBBBBB",
+               Slight = "#4C4E4D"),
+    name = "Severity of Accident"
+  ) +
+  labs(
+    x = "Month of Year",
+    y = "Proportion of Accidents",
+    title = "Proportion of Accidents by MOY per Severity"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 12))
+```
+
+Then, we plotted a bar chart displaying the proportion of each accident severity for each month. The primary insight observed from this chart above was the relative constancy in the distribution of accident severity, despite the high fluctuations in the monthly total accident numbers. This suggested that the variables influencing the frequency of accidents might not be the same as those affecting their severity. We observed a slightly larger increase in the proportion of serious accidents in the months of July and August.
+
+```{r moy chi test}
+chi_sq_results_month <- data.frame()
+
+overall_proportions <- accidents_by_month_severity %>%
+  group_by(accident_severity_chr) %>%
+  summarise(overall_count = sum(count), .groups = 'drop') %>%
+  mutate(overall_proportion = overall_count / sum(overall_count))
+
+total_accidents_by_month <- accidents_by_month_severity %>%
+  group_by(month_name) %>%
+  summarise(total_count = sum(count)) %>%
+  ungroup()
+
+severity_types <- c("Fatal", "Serious", "Slight")
+
+for(severity in severity_types) {
+    severity_data <- accidents_by_month_severity %>%
+                     filter(accident_severity_chr == severity) %>%
+                     select(month_name, count)
+
+    severity_table_complete <- merge(total_accidents_by_month[, c("month_name")], 
+                                    severity_data, 
+                                    by = "month_name", 
+                                    all.x = TRUE)
+    severity_table_complete[is.na(severity_table_complete)] <- 0
+
+    expected_proportion <- overall_proportions$overall_proportion[overall_proportions$accident_severity_chr == severity]
+    expected_counts <- total_accidents_by_month %>%
+                       mutate(expected_count = total_count * expected_proportion)
+
+    chi_squared_test <- chisq.test(severity_table_complete$count, 
+                                   p = expected_counts$expected_count / sum(expected_counts$expected_count))
+
+    chi_sq_results_month <- rbind(chi_sq_results_month, 
+                                  data.frame(Severity = severity, 
+                                             Chi_Squared = chi_squared_test$statistic, 
+                                             DF = chi_squared_test$parameter, 
+                                             P_Value = chi_squared_test$p.value))
+}
+
+# Round the P-Values first
+chi_sq_results_month$P_Value <- round(chi_sq_results_month$P_Value, 2)
+
+# Then replace values less than 0.01 with "<0.01"
+chi_sq_results_month$P_Value <- ifelse(chi_sq_results_month$P_Value < 0.01, "<0.01", as.character(chi_sq_results_month$P_Value))
+
+# Now, your knitr::kable() should work without errors
+knitr::kable(chi_sq_results_month, format = "simple", caption = "Chi-Squared Test Results for Each Severity Type Across Months")
+```
+
+```{r moy chi test PROPORTION including standard residual analysis, echo=FALSE, eval=FALSE}
+
+# This wasn't included in our project, however it's interesting. It dives deeper into the impact that each MONTH had on the test of independence. Worth having a look at what months are signifigant in YOUR dataset if you're recreating this!
+
+overall_proportions <- accidents_by_month_severity %>%
+  group_by(accident_severity_chr) %>%
+  summarise(overall_count = sum(count), .groups = 'drop') %>%
+  mutate(overall_proportion = overall_count / sum(overall_count))
+
+# Total accidents per month (regardless of severity)
+total_accidents_by_month <- accidents_by_month_severity %>%
+  group_by(month_name) %>%
+  summarise(total_count = sum(count)) %>%
+  ungroup()
+
+# Perform Chi-Squared tests for each severity type
+severity_types <- c("Fatal", "Serious", "Slight")
+
+for(severity in severity_types) {
+    # Filter data for each severity type
+    severity_data <- accidents_by_month_severity %>%
+                     filter(accident_severity_chr == severity) %>%
+                     select(month_name, count)
+
+    # Create a complete observed count table for each severity
+    severity_table_complete <- merge(total_accidents_by_month[, c("month_name")], 
+                                    severity_data, 
+                                    by = "month_name", 
+                                    all.x = TRUE)
+    severity_table_complete[is.na(severity_table_complete)] <- 0
+
+    # Calculate expected counts for each month
+    expected_proportion <- overall_proportions$overall_proportion[overall_proportions$accident_severity_chr == severity]
+    expected_counts <- total_accidents_by_month %>%
+                       mutate(expected_count = total_count * expected_proportion)
+
+    # Perform Chi-Squared test
+    chi_squared_test <- chisq.test(severity_table_complete$count, 
+                                   p = expected_counts$expected_count / sum(expected_counts$expected_count))
+
+    # Calculate standardized residuals
+    std_residuals <- chi_squared_test$stdres
+
+    cat("\nSeverity:", severity, "\n")
+    cat("Chi-Squared:", chi_squared_test$statistic, ", DF:", chi_squared_test$parameter, ", P-Value:", chi_squared_test$p.value, "\n")
+    cat("Standardized Residuals:\n")
+    print(std_residuals)
+    cat("\n\n")
+}
+```
+
+Our next step involved conducting a chi-squared test to statistically validate these findings. The results, as visualized in the table above, confirmed a significant relationship between the number of slight (Chi-Squared = 342.2, DF = 11, P-Value \< 0.01) and serious (Chi-Squared = 196.2, DF = 11, P-Value \< 0.01) accidents and the month of the year (p-value\<0.01). Intriguingly, no such association was found for fatal accidents, as it has a p-value larger than 1% at 13%
+
+This observation is indeed plausible, as fatal accidents may have been influenced by factors that remained relatively stable throughout the year, showing little monthly variation. To elaborate, factors such as weather conditions, which could have varied by month, might have had a more significant impact on determining whether an accident resulted in a serious or slight outcome, while potentially having less influence on the likelihood of a fatality.
+
+Interestingly, this finding aligned with our analysis of spatial characteristic, which revealed that adverse weather conditions such as rain and ice tended to decrease the odds of more serious and fatal accidents. This could be attributed to the heightened caution exercised by drivers in such conditions.
+
+```{r moy lm, echo=FALSE, include=FALSE}
+# Filter out the fatal cases
+q2_clean_non_fatal <- subset(q2_clean, accident_severity_chr %in% c("Serious", "Slight"))
+
+# Create a new binary variable for serious (1) vs. slight (0) accidents, excluding fatal
+q2_clean_non_fatal$serious_vs_slight_binary <- ifelse(q2_clean_non_fatal$accident_severity_chr == "Serious", 1, 0)
+
+# Logistic regression with the month of the year for serious vs. slight accidents, excluding fatal
+logit_model_serious_vs_slight <- glm(serious_vs_slight_binary ~ month_name, data = q2_clean_non_fatal, family = binomial())
+
+# Print the summary of the logistic regression model
+summary(logit_model_serious_vs_slight)
+```
+
+```{r lm moy OUTPUT, echo=FALSE}
+logit_model_serious_vs_slight %>%
+  tbl_regression(
+    exponentiate = TRUE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 2)
+  ) %>%
+  add_n() %>% 
+  bold_p(t = 0.01) %>%
+  bold_labels() %>%
+  italicize_levels()
+```
+
+To refine the analysis once again, logistic regression was applied, focusing on slight and serious accidents, given the statistically insignificant findings regarding fatal accidents. The regression aimed to discern the risk levels of accident severity for each month. The findings were nuanced; not all months exhibited a statistically significant variance in the likelihood of serious versus slight accidents. However, certain months stood out, in line with our observations from the previous chart.
+
+During the transition from spring to summer, beginning in April, there was a gradual uptick in the likelihood of serious accidents. This trend achieved statistical significance in April (OR = `r round(exp(coef(logit_model_serious_vs_slight)["month_nameApril"]), 2)`, p = `r round(summary(logit_model_serious_vs_slight)$coefficients["month_nameApril","Pr(>|z|)"], 3)`) and May (OR = `r round(exp(coef(logit_model_serious_vs_slight)["month_nameMay"]), 2)`, p = `r round(summary(logit_model_serious_vs_slight)$coefficients["month_nameMay","Pr(>|z|)"], 3)`), potentially linked to increased travel frequency due to better weather.The summer months, particularly July (OR = `r round(exp(coef(logit_model_serious_vs_slight)["month_nameJuly"]), 2)`, p = `r round(summary(logit_model_serious_vs_slight)$coefficients["month_nameJuly","Pr(>|z|)"], 3)`) and August (OR = `r round(exp(coef(logit_model_serious_vs_slight)["month_nameAugust"]), 2)`, p = `r round(summary(logit_model_serious_vs_slight)$coefficients["month_nameAugust","Pr(>|z|)"], 3)`), showed the highest odds ratios for serious accidents, both statistically significant. The increased risk during these months might have been attributed to the summer holidays, which typically result in greater traffic volume and a diverse range of drivers, including tourists, potentially raising the chance of serious incidents.September, marking the end of summer, also noted a rise in risk (OR = `r round(exp(coef(logit_model_serious_vs_slight)["month_nameSeptember"]), 2)`, p = `r round(summary(logit_model_serious_vs_slight)$coefficients["month_nameSeptember","Pr(>|z|)"], 3)`), possibly related to the resurgence of regular traffic patterns and the commencement of the school term.In contrast, months such as February, March, and December did not show significant shifts in the odds of accident severity. This could be due to a variety of reasons, such as consistent driving behavior, stable road conditions, or uniform traffic volumes during these periods. The lack of significant findings in some months suggest that factors other than the time of year might have been more influential in determining accident severity. For example, the impact of road safety campaigns, law enforcement activities, or amendments to driving legislation could have contributed to a more uniform influence on the severity of accidents, overshadowing any seasonal effects.
+
+### 4.2.4 Key Findings on Temporal Patterns in Road Accidents
+
+In our analysis, we identified distinct patterns related to the time of day, day of the week, and month of the year. In this section, we provide a summary of the key findings that answer our research question.
+
+-   Time of Day:
+
+    -   Accidents were most frequent during the afternoon hours (12-6 PM).
+
+    -   Early morning hours (0-6 AM) exhibited a higher proportion of severe accidents (fatal and serious), possibly due to factors like driver fatigue, alcohol use, or compromised visibility.
+
+    -   Statistical tests and logistic regression analysis confirmed a strong association between the time of day and accident severity.
+
+-   Day of the Week:
+
+    -   Saturdays recorded the highest average number of accidents, while Mondays had the lowest.
+
+    -   Despite lower accident frequency, Mondays and Sundays exhibited the highest proportions of fatal and serious accidents.
+
+    -   Statistical tests and logistic regression analysis confirmed a significant association between the day of the week and accident severity, Mondays standing out as the riskiest day for road accidents in terms of severity.
+
+-   Month of the Year:
+
+    -   November experienced the highest number of accidents, with a significant peak.
+
+    -   Proportions of accident severity varied by month, with July and August having a slightly higher proportion of serious accidents.
+
+    -   Statistical tests confirmed a significant relationship between slight and serious accidents and the month of the year.
+
+    -   Logistic regression revealed that the risk of serious accidents increased from April to August.
+
+## 4.3 Research Question 3: Do demographics and vehicle characteristics affect road accidents and their severity?
+
+Building upon the methodology employed to address our earlier research question, our exploratory analysis provided valuable insights into variables deserving further examination in this section. In this analysis, we introduced a more comprehensive approach, offering a nuanced perspective on how accidents relate to demographic attributes and vehicle types, while also exploring the persistence of these findings when evaluating accident severity. In order to avoid any potential biases when analyzing the demographic associations to road accidents, this section focuses strictly on drivers of vehicles.
+
+```{r excluding passengers, echo=FALSE}
+filtered_q3a_clean <- q3a_clean %>%
+  filter(car_passenger_chr == "Not car passenger",
+         casualty_class_chr == "Driver/Rider",
+         casualty_class_chr == "Driver/Rider",
+         vehicle_category != "Other")
+```
+
+### 4.3.1 Gender
+
+```{r gender propotion}
+gender_severity_proportions <- filtered_q3a_clean %>%
+  group_by(sex_chr, casualty_severity_chr) %>%
+  summarise(count = n()) %>%
+  ungroup() %>%
+  group_by(sex_chr) %>%
+  mutate(proportion = count / sum(count)) %>%
+  ungroup()
+
+# Assuming gender_severity_proportions is already created
+ggplot(gender_severity_proportions, aes(x = factor(sex_chr), y = proportion, fill = casualty_severity_chr)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(
+    aes(label = scales::percent(proportion, accuracy = 0.01)), 
+    position = position_stack(vjust = 0.5), 
+    color = "black", 
+    size = 3
+  ) +
+  scale_fill_manual(values = c("Light" = "#FFEB00", "Serious" = "#BBBBBB", "Fatal" = "#4C4E4D"), name = "Severity") +
+  labs(title = "Proportion of Casualty Severity by Gender", x = "Gender", y = "Proportion") +
+  theme_minimal()
+```
+
+In our exploratory data analysis, we looked at the total number of accidents categorized by gender and severity. This served as our starting point for identifying any patterns or differences, and we noticed that men had a higher overall count of accidents across all levels of severity. The chart above displays the proportion of each severity category relative to gender. This allowed us to take a more comprehensive look at the data while controlling for the imbalanced number of accidents with men and women. The bar chart clearly showed a significantly higher percentage of slight (77.7%), serious (`r round(100 * mean(gender_severity_proportions$proportion[gender_severity_proportions$sex_chr == "Male" & gender_severity_proportions$casualty_severity_chr == "Serious"]), 2)`%) and fatal (`r round(100 * mean(gender_severity_proportions$proportion[gender_severity_proportions$sex_chr == "Male" & gender_severity_proportions$casualty_severity_chr == "Fatal"]), 2)`%) accidents among males compared to females.
+
+```{r gender chi PROPORTION, echo=FALSE}
+# column: margin
+overall_gender_proportions <- filtered_q3a_clean %>%
+  group_by(sex_chr) %>%
+  summarise(total_count = n(), .groups = 'drop') %>%
+  mutate(overall_proportion = total_count / sum(total_count))
+
+chi_sq_results <- data.frame()
+
+severity_levels <- unique(filtered_q3a_clean$casualty_severity_chr)
+
+
+for(severity_level in severity_levels) {
+  sub_data <- filter(filtered_q3a_clean, casualty_severity_chr == severity_level)
+  observed_counts <- table(sub_data$sex_chr)
+
+  # Calculate expected counts for each gender
+  expected_counts <- overall_gender_proportions$overall_proportion * sum(observed_counts)
+  
+  # Perform Chi-Squared test
+  chi_squared_test <- chisq.test(observed_counts, p = expected_counts / sum(expected_counts))
+  
+  # Store the results
+  chi_sq_results <- rbind(chi_sq_results,
+                          data.frame(Severity_Level = severity_level,
+                                     Chi_Squared = chi_squared_test$statistic,
+                                     DF = chi_squared_test$parameter,
+                                     P_Value = chi_squared_test$p.value))
+}
+
+# This makes it so that it shows <0.01 if the p value is smaller than this since this is the level that we were testing at. 
+chi_sq_results$P_Value <- ifelse(chi_sq_results$P_Value < 0.01, "<0.01", chi_sq_results$P_Value)
+
+# This removes the pesky row names that are a result of the function that we ran before. If you change the chi square method, you shouldn't have to do this - but I couldn't get around it. 
+rownames(chi_sq_results) <- NULL
+
+# Output the Chi-Squared test results
+knitr::kable(
+  chi_sq_results,
+  caption = "Chi-Squared Test Results for Gender Proportions by Severity Level",
+  align = 'c',  # Center alignment for each column
+  col.names = c("Severity Level", "Chi-Squared", "Degrees of Freedom", "P-Value"),
+  format = "html"  # Use HTML if you are rendering to an HTML-based format like Quarto
+)
+```
+
+To confirm these findings and account for differences in accident counts between males and females, we conducted a chi-squared test on these proportions to assess the statistical significance of these gender-based differences. Our test results demonstrated highly significant associations between accident severity and gender across all severity levels (see table in margin), underscoring a clear difference in accident frequencies between the two genders at all levels of severity (p-value \<0.01).
+
+```{r lm model gender, echo=FALSE, include=FALSE}
+# Assuming casualty_severity_chr has levels: "Light", "Serious", "Fatal"
+# Recode severity into binary outcome for logistic regression (e.g., Light vs. Serious/Fatal)
+filtered_q3a_clean$binary_severity <- ifelse(filtered_q3a_clean$casualty_severity_chr == "Light", 0, 1)
+
+# Logistic regression with gender and vehicle type
+logit_model_gender <- glm(binary_severity ~ sex_chr, data = filtered_q3a_clean, family = "binomial")
+summary(logit_model_gender)
+```
+
+```{r lm model gender output}
+logit_model_gender %>%
+  tbl_regression(
+    exponentiate = TRUE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 2)
+  ) %>%
+  add_n() %>% 
+  bold_p(t = 0.01) %>%
+  bold_labels() %>%
+  italicize_levels()
+```
+
+Further quantitative analysis through logistic regression, with males as the reference group, revealed that females were significantly less likely to be involved in serious or fatal accidents. Specifically, females exhibited `r round(exp(-0.6064), 2)` times lower odds of being in such accidents compared to males in the UK in 2022 (OR: `r round(exp(-0.6064), 2)`, 95% CI: \[`r round(exp(confint(logit_model_gender)["sex_chrFemale", 1]), 2)`, `r round(exp(confint(logit_model_gender)["sex_chrFemale", 2]), 2)`\], p-value \< `r round(summary(logit_model_gender)$coefficients["sex_chrFemale","Pr(>|z|)"], 3)`).
+
+This pattern may imply that males are either engaging in riskier driving behaviors or are exposed to more high-risk situations. In contrast, the predominance of minor accidents among females might reflect a more cautious driving style or different patterns of vehicle usage.
+
+Our analysis aligns with Li et al.'s 1998 study, which found a higher incidence of severe and fatal accidents among men. While historical data suggested that women previously faced a greater risk of serious injury in accidents of comparable severity, recent trends indicate a reduction in this gender disparity, potentially due to changes in vehicle safety features and driving behaviors, as discussed by Brumbelow & Jermakian in 2022. This aligns with current discussions on the "gendered data gap" and its implications on vehicle safety design and assessment.
+
+### 4.3.2 Age
+
+```{r age density plot, echo=FALSE}
+plot <- ggplot(filtered_q3a_clean, aes(x = age_of_casualty, fill = casualty_severity_chr)) +
+  geom_density(alpha = 0.7) +
+  scale_fill_manual(values = c("Fatal" = "#FFEB00", "Serious" = "#bbbbbb", "Light" = "#4c4e4d"),
+                    name = "Severity Level") +  # Change the legend title here
+  labs(title = "Age Distribution by Casualty Severity", 
+       x = "Age", y = "Density") +
+  theme_minimal() +
+  annotate("rect", xmin = 50, xmax = 100, ymin = 0, ymax = 0.015, 
+           fill = NA, color = "blue", size = 1, linetype = "dashed")
+
+plot
+```
+
+Using a similar approach to that of our gender analysis, we examined the total accident counts for each age group during our exploratory data analysis. This initial examination revealed a peak in accidents among relatively young individuals, particularly those aged 18-29. To delve deeper into this trend, we assessed the proportion of slight, serious, and fatal accidents across different age groups in our analysis.
+
+To achieve this, we utilized a kernel density plot to visualize the age distribution within the three accident severity levels. While the age distribution for light and severe accidents exhibited similar patterns to that of the right skewed distribution of accidents, a distinctive observation emerged: fatal accidents remained relatively stable across various age groups (see blue square on chart). This suggests that, although the elderly experienced fewer accidents, they faced a higher risk of mortality in such accidents.
+
+```{r lm model age continous, echo=FALSE}
+logit_model_serious_fatal_vs_slight <- glm(binary_severity ~ age_of_casualty, 
+                                           data = filtered_q3a_clean, 
+                                           family = binomial())
+logit_model_serious_fatal_vs_slight %>%
+  tbl_regression(
+    exponentiate = TRUE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 2)
+  ) %>%
+  add_n() %>% 
+  bold_p(t = 0.01) %>%
+  bold_labels() %>%
+  italicize_levels()
+```
+
+The odds ratio for age was `r exp(coef(logit_model_serious_fatal_vs_slight)["age_of_casualty"])` (95% CI 1.01-1.01, p `r ifelse(summary(logit_model_serious_fatal_vs_slight)$coefficients["age_of_casualty", "Pr(>|z|)"] < 0.001, "<0.001", formatC(summary(logit_model_serious_fatal_vs_slight)$coefficients["age_of_casualty", "Pr(>|z|)"], format = "f", digits = 3))`), indicating that with each additional year, the likelihood of being involved in a serious or fatal accident, as opposed to a slight one, increased by `r (exp(coef(logit_model_serious_fatal_vs_slight)["age_of_casualty"]) - 1) * 100`%. This incremental yet consistent increase highlighted a crucial aspect: as individuals age, their risk of being involved in more severe accidents escalated slightly each year. These findings are in line with those of the EU commission of mobility and transport who found that older individuals tended to be more at risk for serious and fatal injuries, especially those over +75 who are 5x more at risk compared to the other average of all ages (European Commission, n.d.).
+
+4.3.3 Vehicle Characteristics:
+
+After analyzing demographics, we sought to determine if certain types of vehicles were more prone to accidents of varying severity than others. To do this, we employed our established methodology, initially creating a bar chart to visualize the distribution of slight, serious, and fatal accidents across different vehicle categories, including cars, bicycles, motorcycles, and trucks.
+
+```{r filter vehcile types, echo=FALSE}
+q3b_clean <- q3b_clean %>%
+  filter(vehicle_category != "Other")
+```
+
+```{r vehicle proportion}
+q3b_clean$max_severity <- with(q3b_clean, ifelse(num_fatal > 0, 'Fatal', 
+                                      ifelse(num_serious > 0, 'Serious', 'Slight')))
+severity_proportion_by_vehicle <- q3b_clean %>%
+  group_by(vehicle_category, max_severity) %>%
+  summarise(accident_count = n(), .groups = 'drop') %>%
+  group_by(vehicle_category) %>%
+  mutate(total_count = sum(accident_count),
+         proportion = accident_count / total_count) %>%
+  ungroup()
+
+motorcycle_fatal = severity_proportion_by_vehicle %>%
+  filter(vehicle_category == "Motorcycle", max_severity == "Fatal") %>%
+  summarise(proportion = first(proportion)) %>%
+  pull(proportion)
+
+motorcycle_serious = severity_proportion_by_vehicle %>%
+  filter(vehicle_category == "Motorcycle", max_severity == "Serious") %>%
+  summarise(proportion = first(proportion)) %>%
+  pull(proportion)
+
+truck_slight = severity_proportion_by_vehicle %>%
+  filter(vehicle_category == "Trucks", max_severity == "Slight") %>%
+  summarise(proportion = first(proportion)) %>%
+  pull(proportion)
+
+truck_serious = severity_proportion_by_vehicle %>%
+  filter(vehicle_category == "Trucks", max_severity == "Serious") %>%
+  summarise(proportion = first(proportion)) %>%
+  pull(proportion)
+
+cyclist_fatal = severity_proportion_by_vehicle %>%
+  filter(vehicle_category == "Cyclist", max_severity == "Fatal") %>%
+  summarise(proportion = first(proportion)) %>%
+  pull(proportion)
+
+ggplot(severity_proportion_by_vehicle, aes(x = vehicle_category, y = proportion, fill = max_severity)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(
+    aes(label = scales::percent(proportion, accuracy = 0.01)), 
+    position = position_stack(vjust = 0.5), 
+    color = "black", 
+    size = 3
+  ) +
+  scale_fill_manual(values = c("Fatal" = "#FFEB00", "Serious" = "#BBBBBB", "Slight" = "#4C4E4D"), name = "Severity") +
+  labs(title = "Proportion of Accident Severity by Vehicle Category", x = "Vehicle Category", y = "Proportion") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+The bar chart revealed that motorcycle accidents displayed a higher percentage of serious accidents (`r round(severity_proportion_by_vehicle %>% filter(vehicle_category == "Motorcycle", max_severity == "Serious") %>% pull(proportion) * 100, 2)`%) and fatal accidents (`r round(severity_proportion_by_vehicle %>% filter(vehicle_category == "Motorcycle", max_severity == "Fatal") %>% pull(proportion) * 100, 2)`%) compared to all other vehicle categories. Conversely, truck accidents exhibited the highest proportion of slight accidents (`r round(severity_proportion_by_vehicle %>% filter(vehicle_category == "Trucks", max_severity == "Slight") %>% pull(proportion) * 100, 2)`%) and the lowest incidence of serious accidents (`r round(severity_proportion_by_vehicle %>% filter(vehicle_category == "Trucks", max_severity == "Serious") %>% pull(proportion) * 100, 2)`%). Interestingly, despite their vulnerability on the road, cyclists had the lowest percentage of fatal accidents (`r round(severity_proportion_by_vehicle %>% filter(vehicle_category == "Cyclist", max_severity == "Fatal") %>% pull(proportion) * 100, 2)`%).
+
+Following this, we conducted a logistic regression analysis to assess the likelihood of experiencing serious or fatal accidents across various vehicle categories, using cars as the reference group (log odds of 1 -- reference)
+
+```{r, echo=FALSE, include=FALSE}
+# Recode severity into a binary outcome: 'Severe' (Fatal or Serious) vs. 'Slight'
+q3b_clean$binary_severity <- ifelse(q3b_clean$max_severity %in% c("Fatal", "Serious"), 1, 0)
+
+# Logistic regression with vehicle category as the predictor
+lm_vehicle_type <- glm(binary_severity ~ vehicle_category, data = q3b_clean, family = binomial())
+
+# Summary of the logistic regression model
+summary(lm_vehicle_type)
+print(summary(lm_vehicle_type)$coefficients)
+
+```
+
+```{r lm vehcile OUTPUT}
+# column: margin
+lm_vehicle_type %>%
+  tbl_regression(
+    exponentiate = TRUE,
+    pvalue_fun = ~ style_pvalue(.x, digits = 2)
+  ) %>%
+  add_n() %>% 
+  bold_p(t = 0.01) %>%
+  bold_labels() %>%
+  italicize_levels()
+```
+
+The results were that cyclists were `r exp(coef(lm_vehicle_type)["vehicle_categoryCyclist"])` times more likely, and motorcyclists over `r exp(coef(lm_vehicle_type)["vehicle_categoryMotorcycle"])` times more likely, to be involved in a more serious or fatal accident compared to car drivers. In contrast, trucks were associated with a reduced likelihood, being `r 1 - exp(coef(lm_vehicle_type)["vehicle_categoryTrucks"])` times less likely than cars to be engaged in serious or fatal accidents. These findings held strong statistical significance, with p-values below 0.01, indicating a robust difference in the risk of accident severity based on vehicle type.
+
+Combining the insights from the bar chart and logistic regression analysis, we concluded that while slight severity accidents predominated across all vehicle categories, motorcycles stood out with a significantly higher risk of serious or fatal accidents. The statistical analysis confirmed that motorcycles carried a substantially greater risk of serious outcomes when compared to cars, while cyclists also had elevated odds, though not as high as motorcycles. In contrast, trucks appeared to be associated with a reduced risk of serious or fatal accidents compared to cars.
+
+## 4.4 Research Question 4: Can we predict the severity of a road accident?
+
+```{r q4 lm encoding, echo=FALSE, eval=FALSE}
+# Reclassify 'accident_severity' into 'Slight' and 'Serious/Fatal'
+logit_data$accident_severity <- ifelse(logit_data$accident_severity %in% c(1, 2), 
+                                   "Serious/Fatal", 
+                                     "Slight")
+
+
+# Verify the reclassification
+table(logit_data$accident_severity)
+```
+
+```{r encoding all variables in lm model to factors, echo=FALSE, eval=FALSE}
+logit_data <- logit_data %>%
+  mutate(
+    sex_of_driver = factor(sex_of_driver, levels = c(1, 2), labels = c("Male", "Female")),
+    road_type = factor(road_type, levels = c(1, 2, 3, 6, 7, 9, 12), labels = c("Roundabout", "One way street", "Dual carriageway", "Single carriageway", "Slip road", "Unknown", "One way street/Slip road")),
+    junction_detail = factor(junction_detail, levels = c(0, 1, 2, 3, 5, 6, 7, 8, 9), labels = c("Not at junction", "Roundabout", "Mini-roundabout", "T or staggered junction", "Slip road", "Crossroads", "More than 4 arms", "Private drive", "Other junction")),
+    junction_control = factor(junction_control, levels = c(0, 1, 2, 3, 4), labels = c("Not at junction", "Authorised person", "Auto traffic signal", "Stop sign", "Give way or uncontrolled")),
+    light_conditions = factor(light_conditions, levels = c(1, 4, 5, 6, 7), labels = c("Daylight", "Darkness - lights lit", "Darkness - lights unlit", "Darkness - no lighting", "Darkness - lighting unknown")),
+    weather_conditions = factor(weather_conditions, levels = c(1, 2, 3, 4, 5, 6, 7, 8, 9), labels = c("Fine no high winds", "Raining no high winds", "Snowing no high winds", "Fine + high winds", "Raining + high winds", "Snowing + high winds", "Fog or mist", "Other", "Unknown")),
+    road_surface_conditions = factor(road_surface_conditions, levels = c(1, 2, 3, 4, 5, 6, 7), labels = c("Dry", "Wet or damp", "Snow", "Frost or ice", "Flood over 3cm deep", "Oil or diesel", "Mud")),
+    urban_or_rural_area = factor(urban_or_rural_area, levels = c(1, 2), labels = c("Urban", "Rural")),
+    vehicle_category = factor(vehicle_category, levels = c("Motorcycle", "Car"), labels = c("Motorcycle", "Car")),
+    propulsion_code = factor(propulsion_code, levels = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12), labels = c("Petrol", "Heavy oil", "Electric", "Steam", "Gas", "Petrol/Gas (LPG)", "Gas/Bi-fuel", "Hybrid electric", "Gas Diesel", "New fuel technology", "Fuel cells", "Electric diesel")),
+    car_passenger = factor(car_passenger, levels = c(0, 1, 2), labels = c("Not a car passenger", "Front seat passenger", "Rear seat passenger")),
+    first_point_of_impact = factor(first_point_of_impact, levels = c(1, 2, 3, 4), labels = c("Front", "Back", "Offside", "Nearside")),
+    vehicle_left_hand_drive = factor(vehicle_left_hand_drive, levels = c(1, 2), labels = c("No", "Yes")),
+    month = factor(month, levels = 1:12, labels = c("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")),
+    speed_limit = factor(speed_limit, levels = c("20", "30", "40", "50", "60", "70"), labels = c("20", "30", "40", "50", "60", "70")),
+    driver_imd_decile = factor(driver_imd_decile, levels = 1:10, labels = c("Most deprived 10%", "More deprived 10-20%", "More deprived 20-30%", "More deprived 30-40%", "More deprived 40-50%", "Less deprived 40-50%", "Less deprived 30-40%", "Less deprived 20-30%", "Less deprived 10-20%", "Least deprived 10%"))
+  )
+
+logit_data$accident_severity <- factor(logit_data$accident_severity, levels = c("Slight", "Serious/Fatal"))
+logit_data <- subset(logit_data, select = -c(accident_index))
+logit_data_clean <- na.omit(logit_data)
+
+```
+
+```{r lm model 1, eval=FALSE}
+library(caret)
+logit_data_clean <- na.omit(logit_data)
+
+# Ensure categorical variables are factors
+logit_data_clean$month <- factor(logit_data_clean$month)
+logit_data_clean$day <- factor(logit_data_clean$day)
+logit_data_clean$road_type <- factor(logit_data_clean$road_type)
+logit_data_clean$speed_limit <- factor(logit_data_clean$speed_limit)
+logit_data_clean$light_conditions <- factor(logit_data_clean$light_conditions)
+logit_data_clean$weather_conditions <- factor(logit_data_clean$weather_conditions)
+logit_data_clean$road_surface_conditions <- factor(logit_data_clean$road_surface_conditions)
+logit_data_clean$urban_or_rural_area <- factor(logit_data_clean$urban_or_rural_area)
+logit_data_clean$driver_imd_decile <- factor(logit_data_clean$driver_imd_decile)
+logit_data_clean$special_conditions_at_site <- factor(logit_data_clean$special_conditions_at_site)
+logit_data_clean$sex_of_driver <- factor(logit_data_clean$sex_of_driver)
+
+# Splitting the data into training and testing sets
+set.seed(123)  # For reproducibility if needed
+
+# Stratified sampling based on 'accident_severity'
+trainIndex <- createDataPartition(logit_data$accident_severity, p = 0.8, list = FALSE)
+
+# Creating training and testing sets
+train_data <- logit_data[trainIndex, ]
+test_data <- logit_data[-trainIndex, ]
+
+table(train_data$accident_severity)
+
+# Checking the distribution in the testing set
+table(test_data$accident_severity)
+
+
+# Proportion in the training set
+prop_train_slight <- table(train_data$accident_severity)["Slight"] / nrow(train_data)
+prop_train_serious_fatal <- table(train_data$accident_severity)["Serious/Fatal"] / nrow(train_data)
+
+# Proportion in the testing set
+prop_test_slight <- table(test_data$accident_severity)["Slight"] / nrow(test_data)
+prop_test_serious_fatal <- table(test_data$accident_severity)["Serious/Fatal"] / nrow(test_data)
+
+# Print proportions 
+#cat("Proportion of 'Slight' in Training Set:", prop_train_slight, "\n")
+#cat("Proportion of 'Serious/Fatal' in Training Set:", prop_train_serious_fatal, "\n")
+#cat("Proportion of 'Slight' in Testing Set:", prop_test_slight, "\n")
+#cat("Proportion of 'Serious/Fatal' in Testing Set:", prop_test_serious_fatal, "\n")
+
+
+# Backward Selection with selected variables
+full_model <- glm(accident_severity ~ month + day + road_type + speed_limit + light_conditions + 
+                   weather_conditions + road_surface_conditions + urban_or_rural_area + engine_capacity_cc + 
+                  special_conditions_at_site + sex_of_driver + age_of_casualty + hour, 
+                   data = train_data, family = binomial())
+
+backward_model <- step(full_model, direction = "backward", trace = 0)
+
+# Forward Selection with selected variables
+null_model <- glm(accident_severity ~ 1, data = train_data, family = binomial())
+forward_model <- step(null_model, scope = list(lower = null_model, upper = full_model), direction = "forward", trace = 0)
+
+# Choose the best model based on AIC
+final_model <- if (AIC(backward_model) < AIC(forward_model)) {
+  backward_model
+} else {
+  forward_model
+}
+
+# Predict on the testing set
+predictions <- predict(final_model, test_data, type = "response")
+predicted_class <- ifelse(predictions > 0.5, 'Non-Slight', 'Slight')
+
+# Convert predictions to a factor with appropriate levels
+predicted_class_factor <- factor(predicted_class, levels = c('Slight', 'Non-Slight'))
+
+# Convert the test data accident_severity to a factor with the same levels
+test_data$accident_severity_factor <- factor(test_data$accident_severity, levels = c('Slight', 'Non-Slight'))
+
+# Evaluate the model with a confusion matrix
+conf_matrix <- confusionMatrix(predicted_class_factor, test_data$accident_severity_factor)
+
+# Print out the confusion matrix and overall statistics
+print(conf_matrix)
+print(conf_matrix$overall)
+```
+
+When we initially conceived our project, our objective was to create a model capable of predicting accident severity based on significant variables identified in our report. However, these significant variables were spread across multiple datasets, making it highly complex to effectively gather and integrate them.
+
+Moreover, we encountered many other challenges.
+
+An initial observation from our analysis revealed a significant discrepancy in the occurrence of serious and fatal accidents compared to slight accidents (which is why we conducted chi tests using proportions to mitigate for this disproportion in previous parts of our analysis).
+
+This observation indicated that when we were going to run a model to predict the severity of an accident, the model would be highly biased towards slight accidents over more serious ones. Attempting to mitigate this issue, we started by employing a 80/20 data split into training and test sets and implemented stratified sampling to ensure that both groups had an equal representation of slight and serious/fatal accidents.
+
+This left us with the following split:\
+
+|       | Slight Accidents | Serious/Fatal Accidents |
+|-------|------------------|-------------------------|
+| Train | 23844            | 6877                    |
+| Test  | 5961             | 1719                    |
+
+: Training vs Test Split
+
+Subsequently, we conducted model training using both forwards and backwards step-wise selection methods and received the following results:
+
+| Prediction | Slight | Serious/Fatal |
+|------------|--------|---------------|
+| Slight     | 5942   | 0             |
+| Non-Slight | 19     | 0             |
+
+: Confusion Matrix
+
+Despite our efforts to address the data imbalance issue, our model's performance yielded extremely poor results. While our model achieved 99.7% accuracy, this metric proved misleading due to the inherent dataset imbalance. Notably, the model struggled to accurately identify 'Non-Slight' (Serious/Fatal) cases, resulting in a sensitivity of 99.7%. However, the absence of true positive cases for the 'Non-Slight' class rendered specificity incalculable. A Kappa value of 0 indicated an agreement no better than random chance, raising concerns about the model's predictive power, particularly for the minority class. Our model selection process, based on backward and forward selection using AIC, may have contributed to potential over-fitting. Additionally, it's possible that the selected variables did not adequately capture the complexity required for class differentiation. Consequently, exploring alternative techniques, model approaches, or metrics to enhance severity prediction accuracy might be necessary. Nevertheless, this might require additional expertise and resources beyond our current knowledge. We've left our code attempts hidden, if you'd like to see our process, please feel free.
+
+```{r lm model 2, eval=FALSE, echo=FALSE}
+library(caret)
+library(ROSE)
+
+# Remove missing values from the dataset
+logit_data_clean <- na.omit(logit_data)
+
+# Splitting the data into training and testing sets
+set.seed(123) # for reproducibility
+trainIndex <- createDataPartition(logit_data_clean$accident_severity, p = 0.8, list = FALSE)
+train_data <- logit_data_clean[trainIndex, ]
+test_data <- logit_data_clean[-trainIndex, ]
+
+# Apply resampling to balance the training data
+balanced_data <- ovun.sample(accident_severity ~ ., data = train_data, method = "both", N = 200000)$data
+
+# Model selection using AIC
+# Ensure only the variables present in your dataset are included
+full_model <- glm(accident_severity ~ month + road_type + speed_limit + light_conditions + 
+                  weather_conditions + road_surface_conditions + urban_or_rural_area + 
+                  propulsion_code + car_passenger + first_point_of_impact + vehicle_left_hand_drive + 
+                  driver_imd_decile + hit_object_off_carriageway + sex_of_driver + age_of_casualty + hour, 
+                  data = balanced_data, family = binomial())
+
+backward_model <- step(full_model, direction = "backward", trace = 0)
+
+null_model <- glm(accident_severity ~ 1, data = balanced_data, family = binomial())
+
+# Choose the best model based on AIC
+final_model <- if (AIC(backward_model) < AIC(forward_model)) {
+  backward_model
+} else {
+  forward_model
+}
+
+# Predict on the testing set
+predictions <- predict(final_model, test_data, type = "response")
+predicted_class <- ifelse(predictions > 0.5, 'Non-Slight', 'Slight')
+
+# Convert predictions to a factor with appropriate levels
+predicted_class_factor <- factor(predicted_class, levels = c('Slight', 'Non-Slight'))
+
+# Convert the test data accident_severity to a factor with the same levels
+test_data$accident_severity_factor <- factor(test_data$accident_severity, levels = c('Slight', 'Non-Slight'))
+
+# Evaluate the model with a confusion matrix
+conf_matrix <- confusionMatrix(predicted_class_factor, test_data$accident_severity_factor)
+print(conf_matrix)
+
+# Additional metrics - ROC curve
+pred <- prediction(predictions, test_data$accident_severity_factor)
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, colorize = TRUE)
+abline(a = 0, b = 1, col = "red")
+```
+
+```{r lm model 3, eval=FALSE, echo=FALSE}
+library(caret)
+library(ROSE)
+# Remove missing values from the dataset
+logit_data_clean <- na.omit(logit_data)
+
+# Ensure categorical variables are factors (modify this according to your dataset)
+logit_data_clean$month <- factor(logit_data_clean$month)
+logit_data_clean$day_of_week <- factor(logit_data_clean$day_of_week)
+logit_data_clean$road_type <- factor(logit_data_clean$road_type)
+logit_data_clean$speed_limit <- factor(logit_data_clean$speed_limit)
+logit_data_clean$light_conditions <- factor(logit_data_clean$light_conditions)
+logit_data_clean$weather_conditions <- factor(logit_data_clean$weather_conditions)
+logit_data_clean$road_surface_conditions <- factor(logit_data_clean$road_surface_conditions)
+logit_data_clean$urban_or_rural_area <- factor(logit_data_clean$urban_or_rural_area)
+logit_data_clean$casualty_imd_decile <- factor(logit_data_clean$casualty_imd_decile)
+logit_data_clean$special_conditions_at_site <- factor(logit_data_clean$special_conditions_at_site)
+logit_data_clean$sex_of_casualty <- factor(logit_data_clean$sex_of_casualty)
+logit_data_clean$time_ranges <- factor(logit_data_clean$time_ranges)
+# Add any other variables you wish to include in the model here.
+
+# Splitting the data into training (70%) and testing (30%) sets
+set.seed(123)
+train_index <- sample(1:nrow(logit_data_clean), 0.7 * nrow(logit_data_clean))
+train_data <- logit_data_clean[train_index, ]
+test_data <- logit_data_clean[-train_index, ]
+
+# Apply resampling to balance the training data
+balanced_data <- ovun.sample(accident_severity ~ month + day_of_week + road_type + speed_limit + 
+                             light_conditions + weather_conditions + road_surface_conditions + 
+                             urban_or_rural_area + engine_capacity_cc + casualty_imd_decile + 
+                             special_conditions_at_site + sex_of_casualty + age_of_casualty + time_ranges, 
+                             data = train_data, method = "both", N = 200000)$data
+
+# Build the logistic regression model with the specified variables
+final_model <- glm(accident_severity ~ month + day_of_week + road_type + speed_limit + 
+                  light_conditions + weather_conditions + road_surface_conditions + 
+                  urban_or_rural_area + engine_capacity_cc + casualty_imd_decile + 
+                  special_conditions_at_site + sex_of_casualty + age_of_casualty + time_ranges, 
+                  data = balanced_data, family = binomial())
+
+# Predict on the testing set and adjust the threshold
+predictions <- predict(final_model, test_data, type = "response")
+new_threshold <- 0.5  # Adjust this threshold as needed
+predicted_class <- ifelse(predictions > new_threshold, 'Non-Slight', 'Slight')
+
+# Ensure that 'accident_severity' in test_data is a factor with the same levels
+test_data$accident_severity_factor <- factor(test_data$accident_severity, levels = c('Slight', 'Non-Slight'))
+
+# Convert predictions to a factor with the same levels as in test_data
+predicted_class_factor <- factor(predicted_class, levels = levels(test_data$accident_severity_factor))
+
+# Evaluate the model with the adjusted threshold
+conf_matrix <- confusionMatrix(predicted_class_factor, test_data$accident_severity_factor)
+print(conf_matrix)
+```
+
+```{r lm model 4, eval=FALSE, echo=FALSE}
+library(caret)
+library(smotefamily) # for SMOTE
+
+# Assuming logit_data is your dataset and accident_severity is your target variable
+# Convert target variable to a binary factor
+logit_data$accident_severity <- factor(logit_data$accident_severity, levels = c('Slight', 'Serious/Fatal'))
+
+# Remove missing values
+logit_data_clean <- na.omit(logit_data)
+
+# Convert all categorical variables to factors
+categorical_vars <- c("month", "day_of_week", "road_type", "light_conditions",
+                      "weather_conditions", "road_surface_conditions", "urban_or_rural_area",
+                      "vehicle_category", "car_passenger", "first_point_of_impact",
+                      "vehicle_left_hand_drive", "casualty_imd_decile", "time_ranges", "propulsion_code", "junction_detail", "junction_control")
+logit_data_clean[categorical_vars] <- lapply(logit_data_clean[categorical_vars], factor)
+
+# Splitting the data into training (80%) and testing (20%) sets
+set.seed(123)
+train_index <- sample(1:nrow(logit_data_clean), 0.8 * nrow(logit_data_clean))
+train_data <- logit_data_clean[train_index, ]
+test_data <- logit_data_clean[-train_index, ]
+
+# Convert factors to dummy variables for SMOTE
+train_data_dummy <- dummyVars(~ ., data = train_data)
+train_data_processed <- predict(train_data_dummy, newdata = train_data)
+
+# Apply SMOTE (assuming 'accident_severity' is the last column)
+balanced_data <- SMOTE(train_data_processed[, -ncol(train_data_processed)], train_data_processed[, ncol(train_data_processed)], perc.over = 100, k = 5, learner = "cart")
+
+# Reconvert the balanced data back to original format
+balanced_data_df <- as.data.frame(balanced_data$data)
+balanced_data_df$accident_severity <- as.factor(ifelse(balanced_data$data[, "Class"] == 1, 'Serious/Fatal', 'Slight'))
+
+# Build the logistic regression model with all variables
+final_model <- glm(accident_severity ~ ., data = balanced_data_df, family = binomial())
+
+# Predict on the testing set
+predictions <- predict(final_model, test_data, type = "response")
+
+# Choose a threshold (you can adjust this based on your analysis)
+threshold <- 0.5
+predicted_class <- ifelse(predictions > threshold, 'Serious/Fatal', 'Slight')
+
+# Convert predictions to a factor with the same levels as in test_data
+predicted_class_factor <- factor(predicted_class, levels = levels(test_data$accident_severity))
+
+# Evaluate the model
+conf_matrix <- confusionMatrix(predicted_class_factor, test_data$accident_severity)
+print(conf_matrix)
+
+```
+
+```{r lm model 5, eval=FALSE, echo=FALSE}
+#THIS IS WITH ONLY USING SEVERE/FATAL A
+logit_data_clean <- na.omit(logit_data)
+
+# Splitting the data into training and testing sets
+set.seed(123)
+train_index <- sample(1:nrow(logit_data_clean), 0.8 * nrow(logit_data_clean))
+train_data <- logit_data_clean[train_index, ]
+test_data <- logit_data_clean[-train_index, ]
+
+# Backward Selection
+full_model <- glm(accident_severity ~ ., data = train_data, family = binomial())
+backward_model <- step(full_model, direction = "backward", trace = 0)
+
+# Forward Selection
+null_model <- glm(accident_severity ~ 1, data = train_data, family = binomial())
+forward_model <- step(null_model, scope = list(lower = null_model, upper = full_model), direction = "forward", trace = 0)
+
+# Choose the best model based on AIC
+# Assuming backward_model is chosen
+final_model <- backward_model
+
+# Predict on the testing set
+predictions <- predict(final_model, test_data, type = "response")
+predicted_class <- ifelse(predictions > 0.5, 'Non-Slight', 'Slight')
+
+# Convert predictions to a factor with appropriate levels
+predicted_class_factor <- factor(predicted_class, levels = c('Slight', 'Non-Slight'))
+
+# Convert the test data accident_severity to a factor with the same levels
+test_data$accident_severity_factor <- factor(test_data$accident_severity, levels = c('Slight', 'Non-Slight'))
+
+# Evaluate the model with a confusion matrix
+library(caret)
+conf_matrix <- confusionMatrix(predicted_class_factor, test_data$accident_severity_factor)
+
+# Print out the confusion matrix and overall statistics
+print(conf_matrix)
+print(conf_matrix$overall)
+```
+
+```{r lm model 6, eval=FALSE}
+library(caret)
+library(ROSE)
+
+# Remove missing values from the dataset
+logit_data_clean <- na.omit(logit_data)
+
+# Splitting the data into training and testing sets
+set.seed(123)
+train_index <- sample(1:nrow(logit_data_clean), 0.8 * nrow(logit_data_clean))
+train_data <- logit_data_clean[train_index, ]
+test_data <- logit_data_clean[-train_index, ]
+
+# Apply resampling to balance the training data
+balanced_data <- ovun.sample(accident_severity ~ ., data = train_data, method = "both", N = 200000)$data
+
+# Backward Selection on the balanced dataset
+full_model <- glm(accident_severity ~ ., data = balanced_data, family = binomial())
+backward_model <- step(full_model, direction = "backward", trace = 0)
+
+# Forward Selection on the balanced dataset
+null_model <- glm(accident_severity ~ 1, data = balanced_data, family = binomial())
+forward_model <- step(null_model, scope = list(lower = null_model, upper = full_model), direction = "forward", trace = 0)
+
+# Choose the best model based on AIC (assuming backward_model is chosen for simplicity)
+final_model <- backward_model
+
+# Predict on the testing set
+predictions <- predict(final_model, test_data, type = "response")
+predicted_class <- ifelse(predictions > 0.5, 'Non-Slight', 'Slight')
+
+# Convert predictions to a factor with appropriate levels
+predicted_class_factor <- factor(predicted_class, levels = c('Slight', 'Non-Slight'))
+
+# Convert the test data accident_severity to a factor with the same levels
+test_data$accident_severity_factor <- factor(test_data$accident_severity, levels = c('Slight', 'Non-Slight'))
+
+# Evaluate the model with a confusion matrix
+conf_matrix <- confusionMatrix(predicted_class_factor, test_data$accident_severity_factor)
+
+# Print out the confusion matrix and overall statistics
+print(conf_matrix)
+print(conf_matrix$overall)
+
+
+```
+
+```{r lm model 7 , eval=FALSE, echo=FALSE}
+library(caret)
+library(ROSE)
+library(randomForest)
+
+# Remove missing values from the dataset
+logit_data_clean <- na.omit(logit_data)
+
+# Splitting the data into training and testing sets
+set.seed(123)
+train_index <- sample(1:nrow(logit_data_clean), 0.8 * nrow(logit_data_clean))
+train_data <- logit_data_clean[train_index, ]
+test_data <- logit_data_clean[-train_index, ]
+
+# Apply resampling to balance the training data
+balanced_data <- ovun.sample(accident_severity ~ ., data = train_data, method = "both", N = 200000)$data
+
+# Train a Random Forest model
+rf_model <- randomForest(accident_severity ~ ., data = balanced_data, ntree = 500)
+
+# Predict on the test set
+rf_predictions <- predict(rf_model, test_data)
+
+# Evaluate with a confusion matrix
+rf_conf_matrix <- confusionMatrix(factor(rf_predictions, levels = c('Slight', 'Non-Slight')),
+                                  test_data$accident_severity_factor)
+
+# Print the confusion matrix and other metrics
+print(rf_conf_matrix)
+```

@@ -1,0 +1,87 @@
+# 5. Conclusion
+
+```{r, echo = FALSE, message = FALSE}
+source(here::here("scripts/setup.R"))
+```
+
+## 5.1 Take home message
+
+Our comprehensive analysis of road accidents in the UK for the year 2022 provided vital insights into the multifaceted nature of road safety. Key takeaways from our study underscore the intricate interplay of spatial, temporal, demographic, and vehicle-related factors in influencing both the frequency and severity of road accidents. Specifically, our findings highlighted the heightened risk of severe accidents in certain urban areas like Blackpool, the pronounced vulnerability of motorcycles to serious accidents, and the increased likelihood of fatal accidents among older demographics. Temporally, the most hazardous times on the road emerged as early morning hours and Saturdays, revealing patterns that align with societal routines and behaviors. The study also revealed a notable gender disparity, with men being more prone to being involved in severe accidents when compared to women.
+
+Importantly, our research illustrated that numerous variables contribute to road accidents and their severity. This complexity underscores the vital importance of road users remaining vigilant at all times. It is imperative to drive only when well and alert, adhere strictly to speed limitations, and always be mindful of the surrounding road conditions and traffic. Additionally, the use of safety features such as seat belts and adhering to traffic rules cannot be overstated. These measures, along with a heightened awareness of the factors identified in our study, can significantly mitigate the risks associated with road usage. Ultimately, the responsibility for road safety lies with each road user, and our collective adherence to safety practices can make a substantial difference in reducing accidents and enhancing overall road safety.
+
+## 5.2 Limitations
+
+The pursuit of this research encountered several methodological challenges that must be acknowledged.
+
+Primarily, the manipulation of three intricate datasets presented complexities in the consolidation of information pertaining to individual accidents. The datasets, while rich in data, were structured in a manner that made it challenging to align and retrieve comprehensive details for each accident event.
+
+Secondly, in our spatial analysis, we normalized data using population metrics. However, upon reflection, traffic volume would have been a superior measure as it directly correlates with the potential for road incidents. The reliance on population data may have introduced discrepancies in the assessment of accident frequency and severity by region.
+
+Thirdly, the scope of our research questions introduced a significant degree of complexity to our analysis. The breadth of each question was such that it could have merited a separate, dedicated study. This expansive approach occasionally constrained the depth of exploration into each specific domain of road safety.
+
+Finally, while envisioning our project, we set out to create a model capable of predicting accident severity based on multiple variables. However, despite our best attempts, our model consistently predicted accidents as 'slight' in severity, due a substantial imbalance in the distribution of accident severity within our dataset, which revealed the complexity of accurately predicting accident severity in such conditions. Despite our best efforts, we were unable to create a model that could successfully predict the severity of a road accident.
+
+These limitations underscore the imperative for a judicious interpretation of our findings. They also pave the path for future research endeavors, which should consider the application of more precise and relevant data measures, such as traffic volume, and a narrower, more focused approach to research questions to provide deeper, more actionable insights into road safety.
+
+## 5.3 Future work
+
+Our report laid a solid foundation in addressing some critical questions related to road accidents in the UK. Moving forward, there are several avenues for future work that could enhance our understanding and contribute to road safety.
+
+Firstly, exploring temporal trends beyond the initial investigation, such as long-term patterns and emerging trends, could provide valuable insights into the dynamics of road accidents. While our current report focused on the data from the year 2022, expanding the temporal scope by including data from multiple years would enable us to identify long-term trends and patterns in road accidents, enhancing the general applicability of our findings. Moreover, considering additional years could reveal evolving patterns, contributing to a more dynamic and adaptive approach to road safety strategies.
+
+Furthermore, in future research, it would be valuable to evaluate and find datasets that are more precise about the road network. This could include factors such as the miles traveled in specific areas, regional regulations, and a more in-depth analysis of various aspects of these regions to understand the objective factors that influenced accident severity.
+
+Additionally, a more detailed examination of demographics and vehicle characteristics could encompass factors such as the socioeconomic status and occupation of drivers, as well as the maintenance records and technological features of vehicles, to better understand their contributions to both the occurrence and severity of accidents.
+
+Lastly, building on the groundwork, the development of a predictive model for accident severity could be refined and expanded, incorporating more variables and employing advanced machine-learning techniques to improve accuracy and applicability.
+
+# 6. References
+
+Antony Thrower. (2023, October 16). *New Analysis Finds The Most Dangerous Places To Drive In UK Outside London*. The Mirror. <https://www.mirror.co.uk/news/uk-news/most-dangerous-places-drive-uk-31196726>
+
+Bose, D., Segui-Gomez, ScD, M., & Crandall, J. R. (2011). Vulnerability of Female Drivers Involved in Motor Vehicle Crashes: An Analysis of US Population at Risk. *Am J Public Health*, *101*(12), 2368--2373. <https://doi.org/10.2105/ajph.2011.300275>
+
+Brumbelow, M. L., & Jermakian, J. S. (2022). Injury risks and crashworthiness benefits for females and males: Which differences are physiological? *Traffic Injury Prevention*, *23*(1), 11--16. <https://doi.org/10.1080/15389588.2021.2004312>
+
+D. (2022a, September 10). *Bank Holiday Announced For Her Majesty Queen Elizabeth II's State Funeral On Monday 19 September*. GOV.UK. <https://www.gov.uk/government/news/bank-holiday-announced-for-her-majesty-queen-elizabeth-iis-state-funeral-on-monday-19-september>
+
+D. (2022b, November 24). *Reported Road Casualties Great Britain: Casualties And Deprivation*. GOV.UK. <https://www.gov.uk/government/statistics/reported-road-casualties-great-britain-casualties-and-deprivation-factsheet-england/reported-road-casualties-great-britain-casualties-and-deprivation>
+
+Department for Levelling Up, Housing and Communities. (2015). *DLUHC Open Data : English Indices Of Deprivation 2015 - LSOA Level*. Department for Levelling Up, Housing and Communities. <https://opendatacommunities.org/data/societal-wellbeing/imd/indices>
+
+Department for Transport. (2020, January 8). *Guidance On Road Classification And The Primary Route Network*. GOV.UK. <https://www.gov.uk/government/publications/guidance-on-road-classification-and-the-primary-route-network/guidance-on-road-classification-and-the-primary-route-network>
+
+Department for Transport. (2021, October 13). *Guide To Severity Adjustments For Reported Road Casualties Great Britain*. GOV.UK. <https://www.gov.uk/government/publications/guide-to-severity-adjustments-for-reported-road-casualty-statistics/guide-to-severity-adjustments-for-reported-road-casualties-great-britain>
+
+Department for Transportation. (2021, September 22). *National Travel Survey: 2020*. GOV.UK. <https://www.gov.uk/government/statistics/national-travel-survey-2020/national-travel-survey-2020>
+
+DLUCH GIS Team Ministry of Housing, Communities and Local Government. (2019, September 25). *Ministry Of Housing, Communities And Local Government*. <https://data-communities.opendata.arcgis.com/datasets/f9205b260a7b4e999455b06d41a67e39/explore>
+
+European Comission. (n.d.). *Older Drivers*. Mobility & Transport - Road Safety. Retrieved December 19, 2023, from <https://road-safety.transport.ec.europa.eu/eu-road-safety-policy/priorities/safe-road-use/elderly-drivers/older-drivers_en>
+
+Jack Brown, Sara Gariban, Erica Belcher, Mario Washington-Ihieme. (2020). *Central London Today*. <https://centreforlondon.org/reader/central-london/central-london-today/>
+
+Li, G., Baker, S. P., Langlois, J. A., & Kelen, G. D. (1998). Are Female Drivers Safer? An Application of the Decomposition Method. *Epidemiology*, *9*(4), 379--384. <https://doi.org/10.1097/00001648-199807000-00006>
+
+Ministry of Housing, Communities & Local Government. (2019, September 26). *English Indices Of Deprivation 2019*. GOV.UK. <https://www.gov.uk/government/statistics/english-indices-of-deprivation-2019>
+
+*Monday The Worst Day For Car Accidents*. (n.d.). Retrieved December 8, 2023, from <https://www.fleetnews.co.uk/news/2004/2/12/monday-the-worst-day-for-car-accidents/15931/>
+
+NHS. (n.d.). *NCDR Reference Library*. NHS. Retrieved November 28, 2023, from <https://data.england.nhs.uk/ncdr/data_element/indices-of-multiple-deprivation-imd-decile/>
+
+Office For National Statistics. (2021). *Census 2021 Geographies - Office For National Statistics*. Office For National Statistics . <https://www.ons.gov.uk/methodology/geography/ukgeographies/censusgeographies/census2021geographies>
+
+ONS Geography Office for National Statistics. (2020, January 6). *Lower Layer Super Output Area (2011) To Upper Tier Local Authorities (2019) Lookup In England And Wales*. Https://Hub.Arcgis.Com/Datasets/Ons::Lower-Layer-Super-Output-Area-2011-to-Upper-Tier-Local-Authorities-2019-Lookup-in-England-and-Wales\--1/Explore. <https://hub.arcgis.com/datasets/ons::lower-layer-super-output-area-2011-to-upper-tier-local-authorities-2019-lookup-in-england-and-wales--1/explore>
+
+*Road Lengths In Great Britain: 2022*. (2023, July 13). GOV.UK . <https://www.gov.uk/government/statistics/road-lengths-in-great-britain-2022/road-lengths-in-great-britain-2022>
+
+Samuel, S. (2019, April 17). *Women Suffer Needless Pain Because Almost Everything Is Designed For Men*. Vox. <https://www.vox.com/future-perfect/2019/4/17/18308466/invisible-women-pain-gender-data-gap-caroline-criado-perez>
+
+Tierney, N. (n.d.). *Using Visdat*. Retrieved November 28, 2023, from <https://cran.r-project.org/web/packages/visdat/vignettes/using_visdat.html>
+
+UCL. (2022, June 29). *The Inequalities Of Road Traffic Injury*. Sustainable Development Goals. <https://www.ucl.ac.uk/sustainable-development-goals/case-studies/2022/jun/inequalities-road-traffic-injury>
+
+World Health Organization. (2018). *WHO \| Death On The Roads*. <https://extranet.who.int/roadsafety/death-on-the-roads/>
+
+World Health Organization. (2022, June 20). *Road Traffic Injuries*. World Health Organization. <https://www.who.int/news-room/fact-sheets/detail/road-traffic-injuries>

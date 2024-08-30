@@ -1,0 +1,1065 @@
+# 3. Exploratory Data Analysis
+
+```{r, echo = FALSE, message = FALSE}
+#Importing setup file - this should be the same ON ALL of the report files that you are using. 
+source(here::here("scripts/setup.R")) 
+```
+
+```{r dataset importation, echo=FALSE}
+# Here we are importing the clean and wrangled datasets from the datafile. It looks for their path (saved in the main directory)
+q1_data_path <- here::here("data", "q1_clean.rds")
+q1_clean <- readRDS(q1_data_path)
+q2_data_path <- here::here("data", "q2_clean.rds")
+q2_clean <- readRDS(q2_data_path)
+q3a_data_path <- here::here("data", "q3a_clean.rds")
+q3a_clean <- readRDS(q3a_data_path)
+q3b_data_path <- here::here("data", "q3b_clean.rds")
+q3b_clean <- readRDS(q3b_data_path)
+```
+
+## 3.1 Spatial Exploration
+
+In this section, we explored the spatial variables that exhibited the strongest associations with accident occurrences for each vehicle type. We also provided a comprehensive explanation of the logical progression that led us to our analysis in subsequent parts of the report.
+
+### 3.1.1 What are the most common road accident characteristics ?
+
+First, we decided to look at the proportional distribution of road accidents by vehicle type relative to various spatial variables: road classifications, types, speed limitations and rural or urban nature of the road.
+
+Conducting this first exploratory analysis represented our initial step in gaining a high-level understanding of our dataset and how and where accidents were distributed across the UK in 2022. It provided us with an initial snapshot of the situation, allowing us to make assumptions about the factors that influenced accident distribution as well as refine our exploration in the subsequent steps.
+
+#### Road Types
+
+```{r road type table, echo=FALSE}
+road_type_names <- c(`1` = "Roundabout", `2` = "One way street", `3` = "Dual carriageway",
+                     `6` = "Single carriageway", `7` = "Slip road", `9` = "Unknown")
+
+# Reshape the data and calculate percentages
+percentage_df <- q1_clean %>%
+  pivot_longer(cols = c("Car", "Trucks", "Motorcycle", "Cyclist", "Other"),
+               names_to = "Vehicle_Type",
+               values_to = "Presence") %>%
+  filter(Presence == 1) %>%
+  group_by(Vehicle_Type, road_type) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(Vehicle_Type) %>%
+  mutate(Total = sum(Count)) %>%
+  mutate(Percentage = round((Count / Total) * 100, 2)) %>%
+  select(-Count, -Total) %>%
+  pivot_wider(names_from = road_type, values_from = Percentage, values_fill = list(Percentage = 0)) %>%
+  rename_with(~road_type_names[as.character(.)], -Vehicle_Type)
+
+
+datatable(percentage_df, rownames = FALSE, 
+  options = list(
+    pageLength = nrow(percentage_df),
+    searching = FALSE,
+    paging = FALSE,
+    autoWidth = TRUE,
+    columnDefs = list(
+      list(className = "dt-center", targets = "_all"),  # Center-align text in all columns
+      list(width = '15%', targets = "_all"),  # Adjust width
+      list(targets = 1:(ncol(percentage_df)-1), createdCell = JS(
+        "function(td, cellData, rowData) {
+          if (cellData == Math.max(...rowData.slice(1,-1))) {
+            $(td).css('background-color', '#FFEB3B');
+          }
+        }"
+      ))
+    )
+  ),
+  caption = 'Proportion of Road Accidents by Road Type per Vehicle Type (in %)'
+)
+```
+
+A first assumption was that there could be a significantly higher proportion of roads being single carriageways, serving as an initial explanation for the prevalence of accidents on these roads.
+
+A second potential assumption was that the elevated danger on single carriageways could have arisen from vehicles traveling in opposite directions without a barrier to prevent collisions. These roads also have a high-speed limit of 60mph (\~97 km/h) which might increase the risks associated.
+
+::: {.callout-caution collapse="true"}
+## Expand to learn more about road types
+
+-   A single carriageway (sometimes spelled as "carriageway") is a type of road that consists of a single roadway with one or more lanes for vehicles traveling in each direction. In other words, it has only one lane of traffic for each direction. In contrast a dual carriageway is a type of road that features two separate carriageways (roadways), each with multiple lanes, for traffic traveling in opposite directions. These carriageways are typically divided by a barrier that prevents direct interaction between vehicles traveling in opposite directions.
+
+-   A dual carriageway is a type of road that features two separate carriageways (roadways), each with multiple lanes, for traffic traveling in opposite directions. These carriageways are typically divided by a barrier that prevents direct interaction between vehicles traveling in opposite directions.
+
+-   A slip road is a short road that allows vehicles to join or leave a main road without stopping.
+:::
+
+We also noted the higher proportion of cyclist accidents occurring in roundabouts, which might be attributed to the difficulty cyclists face in clearly indicating their directions or drivers failing to check their blind spots before exiting roundabouts.
+
+#### Road Classes
+
+```{r road class table, echo=FALSE}
+first_road_class_names <- c(`1` = "Motorway", `2` = "A(Motorway)", `3` = "A - Major Road",
+                     `4` = "B - Regular Roads", `5` = "C - Minor Roads", `6` = "Unclassified - Local Roads")
+
+# Reshape the data and calculate percentages
+percentage_df <- q1_clean %>%
+  pivot_longer(cols = c("Car", "Trucks", "Motorcycle", "Cyclist", "Other"),
+               names_to = "Vehicle_Type",
+               values_to = "Presence") %>%
+  filter(Presence == 1) %>%
+  group_by(Vehicle_Type, first_road_class) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(Vehicle_Type) %>%
+  mutate(Total = sum(Count)) %>%
+  mutate(Percentage = round((Count / Total) * 100, 2)) %>%
+  select(-Count, -Total) %>%
+  pivot_wider(names_from = first_road_class, values_from = Percentage, values_fill = list(Percentage = 0)) %>%
+  rename_with(~first_road_class_names[as.character(.)], -Vehicle_Type)
+
+# Create DataTable with highlighting
+datatable(percentage_df, rownames = FALSE, 
+  options = list(
+    pageLength = nrow(percentage_df),
+    searching = FALSE,
+    paging = FALSE,
+    autoWidth = TRUE,
+    columnDefs = list(
+      list(className = "dt-center", targets = "_all"),  # Center-align text in all columns
+      list(width = '15%', targets = "_all"),  # Adjust width
+      list(targets = 1:(ncol(percentage_df)-1), createdCell = JS(
+        "function(td, cellData, rowData) {
+          if (cellData == Math.max(...rowData.slice(1,-1))) {
+            $(td).css('background-color', '#FFEB3B');
+          }
+        }"
+      ))
+    )
+  ),
+  caption = 'Proportion of Road Accidents by Road Type per Vehicle Type (in %)'
+)
+```
+
+This table reveals that at least 40% of accidents in our dataset occurred on A -- Major Roads for all vehicle types. However, A-Major Roads only accounting for 12% of the total road network across the UK, suggests a disproportionately high rate of accidents on these roads. As illustrated in the subsequent graph, B, C, and U-roads are significantly more prevalent in the UK than A-roads (Department for Transport, 2020).
+
+[![Percentage of road length by road class in UK 2022](images/Chart1-RoadLengthByRoadClass.svg)](https://www.gov.uk/government/statistics/road-lengths-in-great-britain-2022/road-lengths-in-great-britain-2022)
+
+Given that A-roads serve as links between regional towns and cities, it is reasonable to anticipate higher traffic density and increased usage by road users which could explain the elevated percentage of accidents that occurred on these roads.
+
+::: {.callout-caution collapse="true"}
+## Expand to learn more about road classes
+
+-   A-Roads:
+
+    -   Major roads between regional towns and cities.
+
+    -   Can be single or dual-carriageway.
+
+    -   Can be found in urban and rural areas.
+
+-   B & C Roads:
+
+    -   Minor roads connecting small towns and villages.
+
+    -   Usually single carriageway with two lanes. White signs with black text.
+
+-   Motorways:
+
+    -   High-speed roads linking major towns and cities.
+
+    -   Always have three lanes and two carriageways - with a safety barrier to protect from oncoming traffic.
+
+    -   Speed limit is typically 70mph.
+
+    -   No pedestrians, bicycles, or slow vehicles allowed.
+:::
+
+#### Speed Limits
+
+```{r speed limit table, echo=FALSE}
+# Define road type names
+speed_limit_names <- c(`20` = "20 mph", `30` = "30 mph", `40` = "40 mph",
+                     `50` = "50 mph", `60` = "60 mph", `70` = "70 mph")
+
+# Reshape the data and calculate percentages
+percentage_df <- q1_clean %>%
+  pivot_longer(cols = c("Car", "Trucks", "Motorcycle", "Cyclist", "Other"),
+               names_to = "Vehicle_Type",
+               values_to = "Presence") %>%
+  filter(Presence == 1) %>%
+  group_by(Vehicle_Type, speed_limit) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(Vehicle_Type) %>%
+  mutate(Total = sum(Count)) %>%
+  mutate(Percentage = round((Count / Total) * 100, 2)) %>%
+  select(-Count, -Total) %>%
+  pivot_wider(names_from = speed_limit, values_from = Percentage, values_fill = list(Percentage = 0)) %>%
+  rename_with(~speed_limit_names[as.character(.)], -Vehicle_Type)
+
+# Create DataTable with highlighting
+datatable(percentage_df, rownames = FALSE, 
+  options = list(
+    pageLength = nrow(percentage_df),
+    searching = FALSE,
+    paging = FALSE,
+    autoWidth = TRUE,
+    columnDefs = list(
+      list(className = "dt-center", targets = "_all"),  # Center-align text in all columns
+      list(width = '15%', targets = "_all"),  # Adjust width
+      list(targets = 1:(ncol(percentage_df)-1), createdCell = JS(
+        "function(td, cellData, rowData) {
+          if (cellData == Math.max(...rowData.slice(1,-1))) {
+            $(td).css('background-color', '#FFEB3B');
+          }
+        }"
+      ))
+    )
+  ),
+  caption = 'Proportion of Road Accidents by Speed Limit per Vehicle Type (in %)'
+)
+```
+
+This table indicates that the majority of accidents, proportionally, took place on roads with a 30 mph (\~48 km/h) speed limit for all vehicle types.
+
+::: column-margin
+| miles per hour - mph | kilometers per hour - km/h |
+|----------------------|----------------------------|
+| 20 mph               | \~32 km/h                  |
+| 30 mph               | \~48 km/h                  |
+| 40 mph               | \~64 km/h                  |
+| 50 mph               | \~80 km/h                  |
+| 60 mph               | \~97 km/h                  |
+| 70 mph               | \~113 km/h                 |
+
+: Conversion table from mph to kmh
+:::
+
+While this aligned with our expectations for cyclists who predominantly navigate urban areas with lower speed limits, it was somewhat unexpected that nearly 50% of accidents occurred on such low-speed roads, particularly for trucks. This observation raised the possibility that traffic density, maneuvering challenges, or decreased driver attentiveness may have contributed to this trend, though these are speculative assumptions.
+
+#### Urban vs. Rural Areas
+
+```{r rural vs urban table, echo=FALSE}
+urban_rural_names <- c(`1` = "Urban", `2` = "Rural")
+
+# Reshape the data and calculate percentages
+percentage_df <- q1_clean %>%
+  pivot_longer(cols = c("Car", "Trucks", "Motorcycle", "Cyclist", "Other"),
+               names_to = "Vehicle_Type",
+               values_to = "Presence") %>%
+  filter(Presence == 1) %>%
+  group_by(Vehicle_Type, urban_or_rural_area) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(Vehicle_Type) %>%
+  mutate(Total = sum(Count)) %>%
+  mutate(Percentage = round((Count / Total) * 100, 2)) %>%
+  select(-Count, -Total) %>%
+  pivot_wider(names_from = urban_or_rural_area, values_from = Percentage, values_fill = list(Percentage = 0)) %>%
+  rename_with(~urban_rural_names[as.character(.)], -Vehicle_Type)
+
+## This code cell refers only to the intext code to find the proportion of accidents for cyclists, motorcycles and cars in urban environments - if reproducing just the table, please disregard. 
+urban_car_percentage <- percentage_df %>%
+  filter(Vehicle_Type == "Car") %>%
+  pull(Urban) %>%
+  first()
+
+# Extract the urban percentage for motorcycles
+urban_motorcycle_percentage <- percentage_df %>%
+  filter(Vehicle_Type == "Motorcycle") %>%
+  pull(Urban) %>%
+  first()
+
+urban_cyclist_percentage <- percentage_df %>%
+  filter(Vehicle_Type == "Cyclist") %>%
+  pull(Urban) %>%
+  first()
+
+# Create DataTable with highlighting
+datatable(percentage_df, rownames = FALSE, 
+  options = list(
+    pageLength = nrow(percentage_df),
+    searching = FALSE,
+    paging = FALSE,
+    autoWidth = TRUE,
+    columnDefs = list(
+      list(className = "dt-center", targets = "_all"),  # Center-align text in all columns
+      list(width = '15%', targets = "_all"),  # Adjust width
+      list(targets = 1:(ncol(percentage_df)-1), createdCell = JS(
+        "function(td, cellData, rowData) {
+          if (cellData == Math.max(...rowData.slice(1,-1))) {
+            $(td).css('background-color', '#FFEB3B');
+          }
+        }"
+      ))
+    )
+  ),
+  caption = 'Proportion of Road Accidents by Rural vs. Urban per Vehicle Type (in %)'
+)
+```
+
+This table indicates that most accidents across all vehicle types occurred in urban environments. Cyclists experienced the highest rate of accidents in cities (`r urban_cyclist_percentage`%), which aligns with their frequent use of city roads. Interestingly, both cars (`r urban_car_percentage`%) and motorcycles (`r urban_motorcycle_percentage`%) showed a similar percentage of urban accidents. This similarity suggests that car and motorcycle usage was predominantly urban and that most accidents might not have occurred much during long-distance travel, but rather in dense traffic and complex road situations. Conversely, trucks exhibited a more balanced distribution of urban and rural accidents, likely reflecting their association with long-distance travel.
+
+### 3.1.2 Per vehicle type - where do accidents occur the most ?
+
+```{r spatial maps per vehicle type}
+#| column: body-outset
+#| layout-nrow: 2
+
+#This code sets out to map in small little points, all the accidents per the different vehicle types. 
+accident_data_sf <- st_as_sf(q1_clean, coords = c("longitude", "latitude"), crs = 4326) # This is converting our q1_clean ( our newly created dataset) into a geospatial data frame which is what is used after for putting these on the graph. The crs = 4326 is the setting the coordinate reference system (CRS) which is something that apparently is commonly used for coordinates, I found it on the documentation online. Feel free to change this if desired. 
+
+
+uk <- ne_countries(scale = "medium", country = "united kingdom", returnclass = "sf") # Here we need to put our points on something. This code finds us a map of the UK and gets it in a medium size (you could make it ALOT bigger which would increase the detail if desired). 
+
+#  Here we define the geographic boundaries for zooming in on the UK - this is the "default" viewing of the map 
+xlims <- c(-7, 2)  # Longitude limits
+ylims <- c(49.5, 56)  # Latitude limits
+
+# Here we are adjusting the theme for black 
+theme_black_bg <- function() {
+    theme_minimal() +
+    theme(
+        plot.background = element_rect(fill = "#212529", color = NA),
+        panel.background = element_rect(fill = "#212529", color = NA),
+        plot.title = element_text(color = "white"),  # Changed to white
+        axis.title = element_text(color = "white"),  # Changed to white
+        axis.text = element_text(color = "white"),   # Changed to white
+        legend.title = element_text(color = "white"),  # Changed to white
+        legend.text = element_text(color = "white"),  # Changed to white
+        legend.position = "none"
+    )
+}
+
+# Here we are plotting for car accidents
+car_data <- accident_data_sf %>% filter(Car > 0)
+car_plot <- ggplot() +
+    geom_sf(data = uk, fill = "#212529", color = "#BBBBBB") +
+    geom_sf(data = car_data, color = "white", size = 0.00000000001) +  # Smaller white points
+    coord_sf(xlim = xlims, ylim = ylims, expand = FALSE) +
+    labs(title = "Car Accidents") +
+    theme_black_bg()
+
+# Here we are plotting for motorcycle accidents
+motorcycle_data <- accident_data_sf %>% filter(Motorcycle > 0)
+motorcycle_plot <- ggplot() +
+    geom_sf(data = uk, fill = "#212529", color = "#BBBBBB") +
+    geom_sf(data = motorcycle_data, color = "white", size = 0.00000000001) +  # Smaller white points
+    coord_sf(xlim = xlims, ylim = ylims, expand = FALSE) +
+    labs(title = "Motorcycle Accidents") +
+    theme_black_bg()
+
+# Here we are plotting for truck accidents
+truck_data <- accident_data_sf %>% filter(Trucks > 0)
+truck_plot <- ggplot() +
+    geom_sf(data = uk, fill = "#212529", color = "#BBBBBB") +
+    geom_sf(data = truck_data, color = "white", size = 0.00000000001) +  # Smaller white points
+    coord_sf(xlim = xlims, ylim = ylims, expand = FALSE) +
+    labs(title = "Truck Accidents") +
+    theme_black_bg()
+
+# Here we are plotting for bicycle accidents
+cycle_data <- accident_data_sf %>% filter(Cyclist > 0)
+cycle_plot <- ggplot() +
+    geom_sf(data = uk, fill = "#212529", color = "#BBBBBB") +
+    geom_sf(data = cycle_data, color = "white", size = 0.00000000001) +  # Smaller white points
+    coord_sf(xlim = xlims, ylim = ylims, expand = FALSE) +
+    labs(title = "Cycling Accidents") +
+    theme_black_bg()
+# Print the plots
+car_plot
+motorcycle_plot
+truck_plot
+cycle_plot
+```
+
+Now that we identified that road accidents exhibited varying spatial patterns/distribution depending on the vehicle type involved (mostly on A-major roads, single carriage ways, at speeds of 30mph, and in urban conditions), we decided to create maps to explore underlying patterns of road accidents more effectively and see if some areas would potentially be more affected than others.
+
+As anticipated and confirming the insights we gained from the previous tables, these maps revealed that accidents did not necessarily cluster in a uniform manner across the UK for all vehicle types. For example, car accidents appeared to be distributed throughout the entire UK (by examining these maps, one can discern UK's intricate road network given the substantial number of accidents recorded in 2022), whereas bicycle accidents were predominantly concentrated in urban areas such as London.
+
+Furthermore, our maps highlighted an interesting trend: the London region (bottom right corner) consistently exhibited a notably high density of accidents across all vehicle types. This phenomenon might be attributed to the region's exceptionally dense population leading to a high volume of traffic and greater interactions between vehicles.
+
+### 3.1.3 Uncovering UK's population
+
+Recognizing that certain areas (and cities), like London, had a higher propensity for road accidents, we then created a map to visualize population density, to discern whether the population was distributed uniformly across regions. The analysis, scaled at the UTLA level rather than the LSOA level, revealed distinct variations in population dispersal.
+
+For instance, it was evident that the southeast region of the UK has a considerably higher population density when compared to the central and northern regions. These variations had to be considered to ensure a fair analysis of accident distribution and comparisons between different areas. Additionally, the London area exhibited a relatively lower population density, mainly because it was divided into smaller UTLAs, which further emphasized the importance of putting the data on a comparable scale.
+
+```{r import LSOA to UTLA converter, echo=FALSE, include=FALSE}
+utla_data_path <- here::here("data","Lower_Layer_Super_Output_Area_(2011)_to_Upper_Tier_Local_Authority_(2020)_Lookup_in_England_and_Wales.csv")
+utla <- read.csv(utla_data_path)
+```
+
+```{r left join of UTLA dataset, echo=FALSE}
+# This code block contains a fail safe - meaning if these columns already exist in the dataset, it will go ahead and jump over this join :) Please see the block below for an explination as well as the README file
+# Left join q1_clean with the UTLA dataset based on LSOA codes
+check_columns <- c("LSOA11NM", "UTLA20CD", "UTLA20NM")
+
+# Check if all the specified columns do not exist in q1_clean
+if (!all(check_columns %in% names(q1_clean))) {
+  q1_clean <- left_join(
+    q1_clean,
+    utla %>% select(LSOA11CD, LSOA11NM, UTLA20CD, UTLA20NM),
+    by = c("lsoa_of_accident_location" = "LSOA11CD")
+  )
+} else {
+  message("All specified columns already exist in spatial dataset (q1_clean). No join performed.")
+}
+```
+
+```{r checking if all our LSOAs got merged, echo=FALSE, include=FALSE}
+your_dataset_lsoa <- q1_clean$lsoa_of_accident_location
+
+# Create a list of LSOA codes from the UTLA dataset
+utla_lsoa <- utla$LSOA11CD
+
+# Find LSOA codes that were not merged
+unmerged_lsoa <- setdiff(your_dataset_lsoa, utla_lsoa)
+
+# Check if there are any unmerged LSOA codes
+if (length(unmerged_lsoa) > 0) {
+  cat("LSOA codes that didn't get merged:")
+  cat("\n")
+  cat(unmerged_lsoa, sep = "\n")
+} else {
+  cat("All LSOA codes from your dataset got merged.")
+}
+```
+
+```{r importing population dataset and left joining to our dataset, echo=FALSE}
+# This little code block here was put in place as a FAILSAFE, essentially, as you can see in the README FILE (please read!!!!) this project is designed to be as independent in the files as possible. However if the last time you ran the document, it saves the cleaned datasets, therefore we run an error here if you rerun the EDA section, since we're trying to do joins on joins. Therefore I've created this for future users with this in mind. Basically this function will run through the spatial dataset that you're attmepting to use to run this file, if the population data ALREADY exists, then this will be skipped, if not it'll proceed as per usual :) 
+
+# Define the path to the Excel file containing population data
+population_data_path <- here("data", "sape23dt13mid2020lsoabroadagesestimatesunformatted.xlsx")
+population_sheet <- 4
+population_data <- read_excel(population_data_path, sheet = population_sheet, skip=3, col_names = TRUE)
+population_data <- population_data[,-(3:6)]
+
+# Check if the column 'All Ages' does not exist in q1_clean
+if (!"All Ages" %in% names(q1_clean)) {
+  q1_clean <- q1_clean %>%
+    left_join(population_data, by = c("lsoa_of_accident_location" = "LSOA Code"))
+} else {
+  message("The 'All Ages' column already exists in q1_clean. No join performed.")
+}
+```
+
+```{r geojson importation,echo=FALSE, include=FALSE}
+#Here we need to import our GeoJSON file with the bounderies of our UTLA's in the UK
+geojson_data_path <- here::here("data", "Local_Authority_(Upper_Tier)_IMD_2019_(OSGB1936).geojson")
+utla_boundaries <- st_read(geojson_data_path)
+```
+
+```{r summarizing pop by UTLA, echo=FALSE}
+# Sum population by UTLA, using unique LSOA values to avoid double counting
+population_by_utla <- q1_clean %>%
+  select(lsoa_of_accident_location, UTLA20CD, `All Ages`) %>%
+  distinct(lsoa_of_accident_location, UTLA20CD, .keep_all = TRUE) %>%
+  group_by(UTLA20CD) %>%
+  summarise(total_population = sum(`All Ages`, na.rm = TRUE))
+
+buckinghamshire_code <- "E10000002" 
+buckinghamshire_population <- 543128
+population_by_utla <- population_by_utla %>%
+  add_row(UTLA20CD = buckinghamshire_code, total_population = buckinghamshire_population)
+```
+
+```{r population map}
+# Join population data with UTLA boundaries
+utla_boundaries_with_population <- left_join(utla_boundaries, population_by_utla, by = c("ctyua19cd" = "UTLA20CD"))
+
+# Create a more nuanced color palette using colorQuantile
+color_palette <- colorQuantile("viridis", utla_boundaries_with_population$total_population, n = 5)
+
+# Create a ggplot map
+population_map <- ggplot() +
+  geom_sf(data = utla_boundaries_with_population, aes(fill = total_population)) +
+  scale_fill_gradientn(colours = viridis::viridis(5), 
+                       breaks = pretty_breaks(n = 5)(utla_boundaries_with_population$total_population),
+                       labels = scales::comma) +
+  labs(fill = "Total Population", 
+       title = "Map of Population by UTLA") +
+  theme_void() +  # A theme with no axes for a clean map
+  theme(legend.position = "right")  # Position the legend on the right
+
+population_map
+```
+
+In our subsequent analysis, we therefore normalized the accident data by the population of each area. This normalization allowed us to gain deeper insights into the different UK regions and be able to answer our RQ1, which was identifying whether specific regions experienced a disproportionately higher or lower number accidents.
+
+## 3.2 Temporal Exploration
+
+In this section, we explored the relationship between temporality and accident occurrences. This provided us with insights that guided our subsequent analysis of different timeframes, including hours (time ranges), days of the week, and months.
+
+### 3.2.1 Daily Exploration
+
+```{r daily count w/ rolling average interactive}
+daily_counts <- q2_clean %>%
+  group_by(date) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(rolling_avg = zoo::rollmean(count, k = 30, fill = NA))
+
+# Find the day with the maximum number of accidents
+max_accidents_day <- daily_counts %>%
+  filter(count == max(count)) %>%
+  slice(1) %>%
+  pull(date)
+
+# Find days with notably low accident counts (you can adjust the threshold as needed)
+low_accidents_days <- daily_counts %>%
+  filter(count < quantile(count, probs = 0.05)) %>%
+  summarise(date = paste(date, collapse = ", "))
+
+# Calculate the overall average of accidents per day
+overall_avg <- mean(daily_counts$count, na.rm = TRUE)
+
+# Create the ggplot object
+p <- ggplot(daily_counts, aes(x = date, y = count)) +
+  geom_line(aes(color = "Daily Counts"), size = 0.125) +
+  geom_line(aes(y = rolling_avg, color = "30-Day Rolling Average"), size = 0.8) +
+  geom_hline(yintercept = overall_avg, linetype = "dashed", color = "#2CA02C", size = 0.8) +
+  labs(
+    title = "Daily Counts, 30-Day Rolling Average, and Overall Average of Road Accidents",
+    x = "Date", 
+    y = "Number of Accidents"
+  ) +
+  scale_color_manual(values = c("Daily Counts" = "#4C4E4D", "30-Day Rolling Average" = "#FE4A49", "Overall Average" = "#2CA02C")) +
+  theme_minimal() +
+  theme(legend.position = "right", legend.title = element_blank(), legend.text = element_text(size = 8), legend.key.size = unit(0.5, "lines"))
+
+# Convert to an interactive plot with specified sizing
+p_interactive <- ggplotly(p, tooltip = c("x", "y", "Legend"), dynamicTicks = TRUE, width = 800, height = 400)
+p_interactive
+```
+
+```{r line plot for presentation, echo=FALSE, eval=FALSE}
+library(ggplot2)
+library(zoo) # for rollmean
+
+# Assuming daily_counts is already created as per your script
+daily_counts <- q2_clean %>%
+  group_by(date) %>%
+  summarise(count = n())
+
+daily_counts$rolling_avg <- zoo::rollmean(daily_counts$count, k = 7, fill = NA)
+
+# Create the ggplot object
+p <- ggplot(daily_counts, aes(x = date)) +
+  geom_line(aes(y = count, color = "Daily Counts"), size = 0.5) +  # Thinner line for daily counts
+  geom_line(aes(y = rolling_avg, color = "7-Day Rolling Average"), size = 1) +  # Slightly thicker line for rolling average
+  labs(title = "",
+       x = "Date", 
+       y = "Number of Accidents") +
+  scale_color_manual(values = c("Daily Counts" = "#4C4E4D", "7-Day Rolling Average" = "#FE4A49")) +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        legend.title = element_blank(), # Remove legend title
+        legend.text = element_text(size = 10), # Adjust text size in legend
+        legend.key.size = unit(0.5, "lines")) # Adjust legend symbol size
+
+# Print the plot
+p
+```
+
+```{r num for video, echo=FALSE,include=FALSE}
+# Average Number of Accidents Per Day
+avg_accidents_per_day <- q2_clean %>%
+  summarise(total_accidents = n(),
+            num_days = n_distinct(date)) %>%
+  mutate(avg_accidents = total_accidents / num_days)
+
+# Average Number of Fatalities Per Day
+avg_fatalities_per_day <- q2_clean %>%
+  summarise(total_fatalities = sum(num_fatal),
+            num_days = n_distinct(date)) %>%
+  mutate(avg_fatalities = total_fatalities / num_days)
+
+# Average Number of Serious or Slight Accidents Per Day
+avg_serious_slight_per_day <- q2_clean %>%
+  summarise(total_serious_slight = sum(num_serious, num_slight),
+            num_days = n_distinct(date)) %>%
+  mutate(avg_serious_slight = total_serious_slight / num_days)
+
+max_accidents <- daily_counts %>%
+  filter(count == max(count))
+max_accidents_day <- max_accidents$date
+max_accidents_count <- max_accidents$count
+
+# Find days with notably low accident counts
+low_accidents <- daily_counts %>%
+  filter(count == min(count))
+low_accidents_days <- low_accidents$date
+low_accidents_count <- low_accidents$count
+
+# Calculate the overall average of accidents per day
+overall_avg <- mean(daily_counts$count, na.rm = TRUE)
+
+# Print results
+print(avg_accidents_per_day)
+print(avg_fatalities_per_day)
+print(avg_serious_slight_per_day)
+```
+
+We initiated our temporal exploration by examining the daily distribution of accidents throughout the year. Our objective was to explore how the number of accidents was distributed throughout the year, how it varied, and how it compared to the average.
+
+We generated the following graph, which clearly illustrates distinct peaks and troughs in the data, indicating noticeable fluctuations within each day. Notably, specific dates, such as `r max_accidents_day` and `r format(low_accidents_days[1])`, prominently stood out with significant spikes in accident counts. For example, on `r max_accidents_day`, we observed an extraordinary peak with over `r max_accidents_count` accidents occurring in a single day. Remarkably, only two days in the entire year recorded fewer than 140 accidents: December 25th, which had `r low_accidents_count[1]` accidents, and September 19th, which had 139 accidents.
+The decline in accident numbers on December 25th might reasonably be attributed to a potential reduction in traffic volume resulting from Christmas celebrations. Similarly, September 19th was an extra bank holiday declared across the UK following the unexpected passing of Queen Elizabeth II, which likely resulted in a reduced number of vehicles in circulation on that day.
+
+On average, there were **`r round(overall_avg)`** accidents per day throughout the entire year (indicated by the green line). By employing a 30-day rolling average, which helps smooth out daily fluctuations and reveals underlying trends, we were able to discern monthly patterns in our data. This was evident as the line on the chart fluctuates above and below the average line depending on the month. This is a primary that months might have an impact on the number of accidents that occur, something that we will investigate later in our paper.
+
+Recognizing the occurrence of daily and monthly variations throughout the year, we then embarked on an exploration of potential patterns within different time frames, including hours of the day, days of the week, and months of the year.
+
+### 3.2.2 Hourly and Weekly Exploration
+
+```{r heatmap HOD and DOW, message=FALSE}
+
+agg_data <- q2_clean %>%
+  group_by(hour, day_name) %>%
+  summarise(accidents_count = n()) %>%
+  ungroup()
+
+ggplot(agg_data, aes(x = hour, y = day_name, fill = accidents_count)) + 
+  geom_tile() +
+  scale_fill_gradient(low = "#F1F3F2", high = "#FE4A49") +
+  labs(
+    x = "Hour",
+    y = "Day of the Week",
+    fill = "Number of Accidents",
+    title = "Heatmap of Accidents by Hour and Day"
+  ) +
+  theme_minimal() +
+  annotate("rect", xmin = 5.5, xmax = 9, ymin = "Monday", ymax = "Sunday", 
+           fill = NA, color = "blue", size = 1, linetype = "dashed") +
+  annotate("rect", xmin = 14, xmax = 19, ymin = "Monday", ymax = "Sunday", 
+           fill = NA, color = "blue", size = 1, linetype = "dashed")
+
+```
+
+We began by examining the most common accident peaks, considering both the hour of the day and the day of the week through the utilization of a heatmap. This visualization depicts higher frequencies of accidents in darker shades of red and lower frequencies in lighter shades, approaching white.
+
+In our exploration, we identified two prominent "peaks" on our chart: one occurring between 7 a.m. and 8 a.m. and another between 3 p.m. and 6 p.m. Interestingly, this consistent pattern extended from Monday to Saturday, aligning with the typical workweek.
+
+This temporal pattern underscores the fact that accidents tended to occur predominantly during rush hours, possibly due to the higher volume of road users during these times, which might have increased the likelihood of accidents.
+
+### 3.2.3 Weekly Exploration
+
+```{r faceted box plot - too complicated, echo=FALSE, eval=FALSE}
+#| column: screen-inset-right
+long_format_day <- q2_clean %>%
+  gather(key = "severity_type", value = "count", num_fatal, num_serious, num_slight) %>%
+  group_by(date, day_name, severity_type) %>%
+  summarise(daily_count = sum(count)) %>%
+  ungroup()
+
+# Normalizing the data (calculating the z-score)
+long_format_day <- long_format_day %>%
+  group_by(severity_type) %>%
+  mutate(
+    mean_count = mean(daily_count),
+    sd_count = sd(daily_count),
+    normalized_count = (daily_count - mean_count) / sd_count
+  ) %>%
+  ungroup()
+
+# Create the box plot with normalized counts
+ggplot(long_format_day, aes(x = day_name, y = normalized_count, fill = severity_type)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +  # Adds a horizontal line at y = 0
+  labs(
+    x = "Day of the Week",
+    y = "Normalized Number of Casualties",
+    title = "Normalized Boxplot of Casualties by Day of the Week and Severity Type"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.title = element_blank()
+  )
+```
+
+```{r box plot DOW, echo=FALSE}
+daily_accidents <- q2_clean %>%
+  group_by(date, day_name) %>%
+  summarise(accident_count = n()) %>%
+  ungroup() %>%
+  mutate(day_name = factor(day_name, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")))
+
+# Calculate mean accidents for each day
+mean_accidents <- daily_accidents %>%
+  group_by(day_name) %>%
+  summarise(mean_accident_count = mean(accident_count)) %>%
+  mutate(mean_label = "Daily Mean") # Add a new column for the legend label
+
+# Create the box plot with additional layers for mean and data distribution
+ggplot(daily_accidents, aes(x = day_name, y = accident_count)) +
+  geom_boxplot() +
+  geom_point(data = mean_accidents, aes(x = day_name, y = mean_accident_count, color = mean_label), shape = 20, size = 3) + # Use color aesthetic for the legend
+  scale_color_manual(values = c("Daily Mean" = "red")) + # Define colors for the legend
+  labs(
+    x = "Day of the Week",
+    y = "Number of Accidents",
+    title = "Boxplot of Daily Accident Counts by Day of the Week",
+    color = "Legend" # Label for the color legend
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "#f1f3f2", colour = "#f1f3f2"),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.background = element_rect(fill = "#f1f3f2"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+Next, we looked at the daily accident count categorized by day of the week. This closer examination revealed a notable pattern: as the week unfolded, there was a gradual increase in the average number of road accidents per day, culminating in a peak on Saturdays, which could be reflective of heightened traffic due to leisure activities or perhaps the cumulative fatigue accumulated over the workweek.
+
+Interestingly, Mondays not only had the fewest incidents on average but also exhibited a maximum number of accidents (excluding outliers) that was lower than even the median accident count observed on Fridays and Saturdays.
+
+The distribution of accidents indicated a relatively low degree of fluctuation in daily accident counts. Mondays and Saturdays, for instance, exhibited tight interquartile range, suggesting a consistent number of accidents. Tuesday had slightly broader box, indicating a less predictable pattern, which could warrant further investigation into external factors influencing these fluctuations.
+
+The proximity of the median to the daily mean---depicted by the red dot---on most days suggested a symmetrical distribution of data.
+
+Outliers on the plot could be the result of specific and unusual circumstances such as public events or extreme weather conditions.
+
+In light of these findings, we investigated further the association between the day of the week and accident occurrence in our analysis as well as any potential links between the day of the week and accident severity.
+
+```{r outliers, echo=FALSE, eval=FALSE}
+iqr_values <- daily_accidents %>%
+  group_by(day_name) %>%
+  summarise(
+    Q1 = quantile(accident_count, 0.25),
+    Q3 = quantile(accident_count, 0.75),
+    IQR = IQR(accident_count)
+  ) %>%
+  ungroup()
+
+# Join the IQR values back to the original data
+daily_accidents_with_iqr <- daily_accidents %>%
+  left_join(iqr_values, by = "day_name")
+
+# Identify outliers
+outliers <- daily_accidents_with_iqr %>%
+  filter(accident_count < (Q1 - 1.5 * IQR) | accident_count > (Q3 + 1.5 * IQR))
+
+# View the outliers
+print(outliers)
+
+```
+
+### 3.2.4 Monthly Exploration
+
+```{r calculating accidents per day, echo=FALSE}
+accidents_per_day <- q2_clean %>%
+  group_by(date) %>%
+  summarise(daily_count = n())
+
+# Extract month from date
+accidents_per_day$month <- month(accidents_per_day$date, label = TRUE)
+```
+
+```{r faceted box plot MOY too complicated, eval=FALSE}
+#| column: screen-inset-right
+long_format_month <- q2_clean %>%
+  gather(key = "severity_type", value = "count", num_fatal, num_serious, num_slight) %>%
+  group_by(date, month_name, severity_type) %>%
+  summarise(daily_count = sum(count)) %>%
+  ungroup()
+
+# Normalizing the data (calculating the z-score)
+long_format_month <- long_format_month %>%
+  group_by(severity_type) %>%
+  mutate(
+    mean_count = mean(daily_count),
+    sd_count = sd(daily_count),
+    normalized_count = (daily_count - mean_count) / sd_count
+  ) %>%
+  ungroup()
+
+# Create the box plot with normalized counts
+ggplot(long_format_month, aes(x = month_name, y = normalized_count, fill = severity_type)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +  # Adds a horizontal line at y = 0
+  labs(
+    x = "Day of the Week",
+    y = "Normalized Number of Casualties",
+    title = "Normalized Boxplot of Casualties by Day of the Week and Severity Type"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.title = element_blank()
+  )
+```
+
+```{r boxplot accidents per MOY, echo=FALSE}
+monthly_accidents <- q2_clean %>%
+  group_by(date, month_name) %>%
+  summarise(accident_count = n(), .groups = 'drop') %>%
+  ungroup() %>%
+  mutate(month_name = factor(month_name, levels = c("January", "February", "March", "April", "May", "June", 
+                                                    "July", "August", "September", "October", "November", "December")))
+
+# Calculate mean accidents for each month
+mean_monthly_accidents <- monthly_accidents %>%
+  group_by(month_name) %>%
+  summarise(mean_accident_count = mean(accident_count)) %>%
+  mutate(mean_label = "Monthly Mean") # Add a new column for the legend label
+
+# Create the box plot with additional layers for mean and data distribution
+ggplot(monthly_accidents, aes(x = month_name, y = accident_count)) +
+  geom_boxplot() +
+  geom_point(data = mean_monthly_accidents, aes(x = month_name, y = mean_accident_count, color = mean_label), shape = 20, size = 3) +
+  scale_color_manual(values = c("Monthly Mean" = "red")) +
+  labs(
+    x = "Month of the Year",
+    y = "Number of Accidents",
+    title = "Boxplot of Daily Accident Counts by Month of the Year",
+    color = "Legend" # Label for the color legend
+  ) +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "#f1f3f2", colour = "#f1f3f2"),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.background = element_rect(fill = "#f1f3f2"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+We then turned our focus to the daily accident counts across the months.Upon examining the monthly distribution of the daily average of road accidents, we observed that each month maintained a relatively stable median of incidents throughout the year. The boxplot revealed that the month of December exhibited a wider interquartile range, indicating significant day-to-day variability in the number of accidents. September, on the other hand, presented a contrasting picture with its notably narrower spread.
+
+The patterns that can be observed on the boxplot above show a very interesting discovery. It indicates that while month-to-month changes had relatively minimal impacts on the overall daily accident average, specific months displayed more variations. These variations could be linked to external factors associated with particular months, such as holidays, school vacations or weather patterns.
+
+Even more interestingly we can set the hypothesis that months can hold specific temporal patterns whereas weeks, which repeat 52 times in a year, might not hold the same underlying temporal trends. This interesting discovery is therefore something we looked further in our analysis.
+
+## 3.3 Demographic Exploration
+
+In this section, we explored the relationship between demographics and accident occurrences. Unlike our previous sections, our exclusive focus here was on the drivers of the vehicles, a deliberate choice aimed at mitigating biases.
+
+From a statistical standpoint, it made more sense to examine the characteristics of the individuals responsible for the accidents rather than passengers or other individuals whose demographics wouldn't significantly impact the accident outcomes.
+
+```{r filtering for only drivers, echo=FALSE}
+filtered_q3a_clean <- q3a_clean %>%
+  filter(car_passenger_chr == "Not car passenger",
+         casualty_class_chr == "Driver/Rider",
+         casualty_class_chr == "Driver/Rider",
+         vehicle_category != "Other")
+```
+
+### 3.3.1 Exploring Age Distribution
+
+```{r mode and proportion of peak, echo=FALSE, include=FALSE}
+# Calculate the mode
+calculate_mode <- function(x) {
+  freq_table <- table(x)
+  mode_values <- as.numeric(names(freq_table)[freq_table == max(freq_table)])
+  return(mode_values)
+}
+
+# Apply the function to your data
+mode_of_data <- calculate_mode(filtered_q3a_clean$age_of_casualty)
+paste("The age with the most amount of accidents is", mode_of_data)
+
+accidents_18_to_29 <- sum(filtered_q3a_clean$age_of_casualty >= 18 & filtered_q3a_clean$age_of_casualty <= 29)
+total_accidents <- nrow(filtered_q3a_clean)
+percentage_18_to_29 <- (accidents_18_to_29 / total_accidents) * 100
+paste("Percentage of accidents involving people aged 18 to 29:", percentage_18_to_29, "%")
+```
+
+```{r distribution of age of drivers}
+max_count <- max(table(filtered_q3a_clean$age_of_casualty))
+
+plotly_gg <- plot_ly(
+  data = filtered_q3a_clean,
+  x = ~age_of_casualty,
+  type = "histogram",
+  marker = list(color = "#4c4e4d")
+) %>%
+  layout(
+    title = "Age Distribution of Driver",
+    xaxis = list(title = "Age"),
+    yaxis = list(title = "Number of Accidents per Given Age"),
+    hovermode = "x"
+  ) %>%
+  config(responsive = TRUE) # Responsive to container size
+
+plotly_gg %>% plotly::layout(width = 800, height = 400) # Set plot size
+
+```
+
+```{r dist age for presentation, echo=FALSE,eval=FALSE}
+ggplot(filtered_q3a_clean, aes(x = age_of_casualty)) +
+  geom_histogram(binwidth = 1, fill = "#4c4e4d", color = "#f1f3f2") +
+  labs(title = "Age Distribution of Casualties", x = "Age", y = "Count") +
+  theme_minimal()
+
+# Calculate the mode(s)
+most_frequent_casualty_ages <- q3a_clean %>%
+  count(age_of_casualty) %>%
+  filter(n == max(n)) %>%
+  pull(age_of_casualty)
+
+print(most_frequent_casualty_ages)
+
+```
+
+```{r proportion table per age group}
+#| column: margin
+age_group_counts <- table(filtered_q3a_clean$age_groups)
+age_group_proportions <- as.numeric(prop.table(age_group_counts))
+age_group_df <- data.frame(Age_Group = names(age_group_counts), Proportion = age_group_proportions)
+age_group_df$Percentage <- round(age_group_df$Proportion * 100, 2)
+age_group_df <- age_group_df[, c("Age_Group", "Percentage")]
+age_group_kable <- knitr::kable(age_group_df, caption = "Proportion of Accidents by Age Groups")
+age_group_kable
+```
+
+The histogram, which is right skewed, revealed that approximately `r round(percentage_18_to_29, 2)`% of accidents involved drivers aged between 18 and 29, with the highest frequency occurring at the age of `r mode_of_data` . We can also see that as of 29 years old, the distribution lowers drastically until the age of 44, where it increases then drops steadily again to plateau between 65 and 75.
+
+This data aligns with the typical age range during which individuals first acquire their driving licenses and may suggest that young, relatively inexperienced drivers might have a heightened likelihood of being involved in accidents, or that these individuals might drive more than their older counterparts. The factors contributing to this increased risk might include but are not limited to: limited driving experience, a higher inclination towards risk-taking behaviors, a greater likelihood of being distracted, a tendency to drive at night, and a preference for certain types of vehicles that may be more challenging to control such as motorcycles vs cars.
+
+### 3.3.2 Exploring Gender
+
+```{r barplot num casualties by gender, echo=FALSE, warning=FALSE}
+ggplot(filtered_q3a_clean, aes(x = casualty_severity_chr, fill = factor(sex_of_casualty))) +
+  geom_bar(position = "dodge", stat = "count") +
+  geom_text(aes(label = ..count..), stat = "count", position = position_dodge(width = 0.9), vjust = -0.5) +
+  scale_fill_manual(values = c("#ffeb00", "#4c4e4d"), name = "Gender", labels = c("Male", "Female")) +
+  labs(title = "Casualties Severity by Gender", x = "Severity", y = "Number of Accidents") +
+  theme_minimal() +
+  theme(panel.background = element_rect(fill = "#f1f3f2", colour = "#f1f3f2")) +
+  coord_flip()
+```
+
+```{r percentage of professional drivers by gender, echo=FALSE}
+#| label: Proportion of female professional driver
+#| fig-cap: "Female vs. Male hired cars."
+#| column: margin
+taxi_data <- q3b_clean %>%
+  filter(vehicle_type_chr == "Taxi/Private hire car")
+
+
+# Calculate counts and proportions by sex_of_driver
+proportion_by_sex <- taxi_data %>%
+  group_by(sex_of_driver) %>%
+  summarise(
+    count = n(),
+    proportion = count / nrow(taxi_data)
+  )
+proportion_by_sex$sex_of_driver <- as.factor(proportion_by_sex$sex_of_driver)
+
+proportion_by_sex$proportion <- proportion_by_sex$proportion * 100
+
+proportion_by_sex$sex_of_driver <- factor(proportion_by_sex$sex_of_driver)
+
+male_taxi_driver_proportion <- proportion_by_sex %>%
+  filter(sex_of_driver == "1") %>%
+  pull(proportion) %>%
+  first()
+```
+
+Upon examining age, our focus shifted to gender. The data distinctly indicates a higher number of accidents among men, with over 40,000 slight accidents involving male drivers compared to less than 20,000 involving female drivers. One plausible hypothesis could be a significant gender imbalance in the driving population, with a higher proportion of male drivers compared to female drivers for all severity level. The UK government released data from 2020 that showed that men drove on average 22% more miles than women per year (Department for Transportation, 2021). Another interesting explanation for both the larger distance traveled for men as well as their increased number of accidents is that men might find themselves using their vehicles as both a means of transport to and from work, but as well as might use their vehicles as a tool of their trade (ex: trucks for truck drivers, or taxis for taxi drivers). In order to quickly explore this hypothesis, we looked at the proportion of male taxi drivers in our dataset which showed that `r male_taxi_driver_proportion`% and is in line with this hypothesis.
+
+## 3.5 Vehicle Exploration
+
+### 3.5.1 Understanding Road Accident Frequencies
+
+In this section we set out to explore vehicles and their characteristics to be able to fully understand how our data is laid out.
+
+```{r mosaic map of accidents per vehcile type, echo=FALSE}
+treemap_data <- data.frame(
+  Category = q3b_clean$vehicle_category,
+  Count = 1
+)
+
+# Sum up the counts for each category
+treemap_data <- aggregate(Count ~ Category, treemap_data, sum)
+
+# Calculate the percentages with two decimal places
+total_count <- sum(treemap_data$Count)
+treemap_data$Percentage <- round((treemap_data$Count / total_count) * 100, 2)
+
+# Create the treemap with custom labels
+treemap_plot <- plot_ly(
+  data = treemap_data,
+  labels = ~Category,
+  parents = "",
+  values = ~Count,
+  text = ~paste("Count: ", Count, "<br>Percentage: ", Percentage, "%"),
+  customdata = ~paste("Number of Road Accidents Involving: ", Category, "<br>Count: ", Count, "<br>Percentage: ", Percentage, "%"),
+  type = "treemap",
+  pathbar = list(
+    visible = FALSE
+  ),
+  width = 600, # Set the width of the plot
+  height = 400 # Set the height of the plot
+)
+
+# Customize the layout
+treemap_plot <- treemap_plot %>%
+  layout(
+    title = "Number of Road Accidents by Vehicle Type",
+    xaxis = list(title = "Count"),
+    hovermode = "closest"
+  )
+
+# Display the interactive treemap
+treemap_plot
+```
+
+After examining various demographics, our focus shifted to vehicle types to better understand their distribution and the proportion of accidents involving each category.
+
+The mosaic plot offers a clear depiction of this distribution, showing that cars were involved in a predominant share of accidents. Specifically, cars accounted for `r round(treemap_data$Percentage[treemap_data$Category == "Car"], 2)`% of incidents, which corresponds to `r format(treemap_data$Count[treemap_data$Category == "Car"], scientific = FALSE)` cases. This substantial figure significantly surpassed that of other vehicle types, highlighting cars as a major area of concern in traffic-related incidents.
+
+In contrast, trucks accounted for `r round(treemap_data$Percentage[treemap_data$Category == "Trucks"], 2)`% of accidents, amounting to `r treemap_data$Count[treemap_data$Category == "Truck"]` instances. Cyclists made up a marginally higher percentage, being involved in `r round(treemap_data$Percentage[treemap_data$Category == "Cyclist"], 2)`% of the accidents, which equates to `r format(treemap_data$Count[treemap_data$Category == "Cyclist"], scientific = FALSE)` recorded instances.
+
+
+### 3.5.2 Vehicle Accidents Over 2022
+
+```{r dist vehcile types over year, echo=FALSE}
+# here we filter out 'Other' vehicle categories and add a month_name column
+accident_summary <- q3b_clean %>%
+  filter(vehicle_category != "Other") %>%
+  mutate(month_name = factor(month.name[month], levels = month.name)) %>%
+  group_by(vehicle_category, month_name) %>% #rouping by vehicle category and month to count accidents
+
+  summarise(accident_count = n(), .groups = 'drop')
+
+# Faceted plot
+vehicle_colors <- c("Car" = "#440154", "Trucks" = "#21908C", "Motorcycle" = "#31688E", "Cyclist" = "#FDE725")
+
+# Modify the ggplot code to include a subtitle and custom colors
+p <- ggplot(accident_summary, aes(x = month_name, y = accident_count, color = vehicle_category, group = vehicle_category)) +
+  geom_line() + # here we add the lines that will connect our points
+  geom_point() + ## Adding points to mark individual data points
+  # Here we had to create separate plots for each vehicle category since they are not comparable in numbers... cars have more than bikes...
+  facet_wrap(~ vehicle_category, scales = "free_y") +
+  labs( #here we add titles, subtitles, axis text, etc.. 
+    title = "Monthly Accidents by Vehicle Type",
+    subtitle = "Caution: Y axis are not equal - and can be used ONLY for observing general trends",
+    x = "Month", 
+    y = "Accident Count"
+  ) +
+  scale_color_manual(values = vehicle_colors) +  # Here we apply our project colours:) 
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  )
+
+# Print the modified plot
+print(p)
+```
+
+Then, we examined the number of accidents per vehicle type during each month of the year (since the frequency of accidents involving each vehicle type were not the same, the axis of each chart are different).
+
+The objective of this visualization was to facilitate the exploration and comparison of accident trends between various vehicle types throughout the year.
+
+A common trend we identified across all vehicle categories was a decrease in the number of accidents during the winter months, particularly in December, January, and February. This decrease was especially pronounced for motorcycles, bicycles, and trucks. Both cars and trucks experienced an increase in the number of accidents from September through November, followed by a sharp decline in December.
+
+Upon examining the peaks in each category, we found that November had the highest number of accidents for cars, with a total of `r max(accident_summary$accident_count[accident_summary$vehicle_category == "Car"])` accidents. In contrast, July emerged as the peak month for bicycles, with `r max(accident_summary$accident_count[accident_summary$vehicle_category == "Bicycle"])` accidents, and June took the lead for motorcycles, with `r max(accident_summary$accident_count[accident_summary$vehicle_category == "Motorcycle"])` accidents. Similar to the cars, trucks had their accident peak in November with `r max(accident_summary$accident_count[accident_summary$vehicle_category == "Truck"])` accidents.
+
+Another interesting discovery is that motorcycles and bicycles both displayed a peak in accidents during the warmer months, hinting that individuals might use motorcycles and bicycles as a primary means of transport in warmer months, but then switch to another means of transport when the weather worsens such as public transport or cars.
+
+This similarity in car and truck accident trends could be attributed to their susceptibility to adverse winter weather conditions, while the increased accidents for motorcycles and bicycles during warmer months might be linked to greater usage and improved road conditions.
+
+```{r EDA saving datasets, echo=FALSE}
+q1_data_path <- here::here("data", "q1_clean.rds")
+q2_data_path <- here::here("data", "q2_clean.rds")
+q2_data_path <- here::here("data", "q2_clean.rds")
+q3a_data_path <- here::here("data", "q3a_clean.rds")
+q3b_data_path <- here::here("data", "q3b_clean.rds")
+saveRDS(q1_clean, q1_data_path)
+saveRDS(q2_clean, q2_data_path)
+saveRDS(q3a_clean, q3a_data_path)
+saveRDS(q3b_clean, q3b_data_path)
+```

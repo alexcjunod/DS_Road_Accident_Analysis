@@ -1,0 +1,105 @@
+---
+title: "ROAD ACCIDENT ANALYSIS"
+subtitle: "COMPREHENSIVE DEEP DIVE ON ROAD ACCIDENTS IN THE UK (2022)"
+author: "Alexander Junod, Camille Leroy, Aurelien Urfer"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_document
+format:
+  html: 
+    self-contained: true
+    title-block-banner: true
+    title-block-banner-color: "#FFFFFF"
+    embed-resources: true
+    page-layout: article
+    grid: 
+      margin-width: 250px
+    css: roadaccidentstyle.css
+    code-overflow: wrap
+    reference-location: margin
+    citation-location: margin
+    code-fold: true
+    code-tools: true
+    code-block-bg: true
+    toc: true
+    toc-depth: 2
+    toc-location: left
+    toc-float:
+      collapsed: false
+      smooth-scroll: true
+    search: true
+    theme:
+      light: flatly
+      dark: darkly
+editor: visual
+---
+
+```{r child = c('intro.qmd', 'data.qmd','eda.qmd', 'analysis.qmd', 'concl.qmd')}
+```
+
+```{r automatic r package installation}
+packages <- c(
+  "here", "tidyverse", "jsonlite", "tidyr", "hms", "readxl", "lubridate", "DataExplorer",
+  "ggrepel", "gghighlight", "patchwork", "maps", "scales", "ggmap", 
+  "leaflet", "leaflet.extras", "rnaturalearth", "sf", "ggspatial", 
+  "rnaturalearth", "DT", "plotly", "viridis", "scales", "ggmosaic",
+  "stats", "dbscan", "zoo", "gtsummary",
+  "knitr", "gt", "htmltools", "pivottabler",
+  "shiny", "ggstatsplot", "visdat"
+)
+
+# Function to install and load packages
+install_and_load <- function(package) {
+  if (!require(package, character.only = TRUE)) {
+    message(paste("Package", package, "is not installed."))
+    return(FALSE)
+  }
+  return(TRUE)
+}
+
+# Check if user wants to install all packages at once
+install_all <- readline("Do you want to install all required packages at once? [y/n]: ")
+if (tolower(install_all) == "y") {
+  install.packages(packages)
+} else {
+  not_installed <- sapply(packages, install_and_load)
+  to_install <- packages[!not_installed]
+
+  # Individual package installation
+  for (pkg in to_install) {
+    install <- readline(paste("Package", pkg, "is required for Group L's project. Do you want to install it? [y/n]: "))
+    if (tolower(install) == "y") {
+      install.packages(pkg)
+    }
+  }
+}
+
+# Load packages
+lapply(packages, require, character.only = TRUE)
+```
+
+```{r manual r package installation}
+packages <- c(
+  "here", "tidyverse", "jsonlite", "tidyr", "hms", "readxl", "lubridate", "DataExplorer",
+  "ggrepel", "gghighlight", "patchwork", "maps", "scales", "ggmap", 
+  "leaflet", "leaflet.extras", "rnaturalearth", "sf", "ggspatial", 
+  "rnaturalearth", "DT", "plotly", "viridis", "scales", "ggmosaic",
+  "stats", "dbscan", "zoo", "gtsummary",
+  "knitr", "gt", "htmltools", "pivottabler",
+  "shiny", "ggstatsplot", "visdat"
+)
+
+# Function to install and load packages
+install_and_load <- function(package) {
+  if (!require(package, character.only = TRUE)) {
+    install <- readline(paste("Package", package, "is required for Group L's project. Do you want to install it? [y/n]: "))
+    if (tolower(install) == "y") {
+      install.packages(package)
+    }
+  } else {
+    message(paste("Package", package, "is already installed."))
+  }
+}
+
+# Apply the install_and_load function to each package
+lapply(packages, install_and_load)
+```

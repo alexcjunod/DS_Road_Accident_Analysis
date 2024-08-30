@@ -1,0 +1,90 @@
+---
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+*Group L - Data Science Project README*
+
+Welcome to the README file for Group L's Data Science Project. This
+document is essential for navigating and understanding our project.
+Please read the following sections thoroughly before starting.
+
+**Dataset Placement**
+
+⚠️ **Important**: Due to Moodle's file limitations, we can't send the
+complete project with datasets included, but had to split them four ways. Please begin by placing all
+datasets within the data folder inside the project's folder. They are currently split
+between 4 compressed folders "data 1-4", and only the files need to be inside the data folder. 
+
+**Necessary Packages - Critical Information**
+
+Our project relies on certain R packages that might not be installed in
+your environment. We've included an automated package management
+solution for ease of setup.
+
+**Automated Package Installer**:
+
+-   Found in the **`report.qmd`** file's first code block.
+
+-   It checks your R environment against our required package list and
+    prompts for installation if any are missing.
+
+⚠️ **Run the package installer before starting any project part to avoid
+errors.**
+
+**Running the Quarto Project**
+
+The project's design ensures each script (data, eda, analysis) is
+independent and modular.
+
+**Execution Order**:
+
+-   Initially, run the scripts in this sequence: data, eda, and analysis
+    (or render, as it achieves the same result).
+
+-   Post-initial run, scripts can be executed independently. Contact us
+    for any issues. Properly re-running the scripts in order should
+    resolve most problems.
+
+**Failsafes**:
+
+-   Certain code blocks include failsafes to avoid repeated execution
+    errors.
+
+[***File Directory - These are all the files that come with the
+project***]{.underline}
+
+**Data folder:**
+
+1.  dft-road-casualty-statistics-casualty-2022.csv
+2.  dft-road-casualty-statistics-collision-2022.csv
+3.  dft-road-casualty-statistics-collisions-casultys-veihcule-2022.csv
+4.  dft-road-casualty-statistics-vehicle-2022.csv
+5.  Local_Authority\_(Upper_Tier)\_IMD_2019\_(OSGB1936).geojson
+6.  Lower_Layer_Super_Output_Area\_(2011)\_to_Upper_Tier_Local_Authority\_(2020)\_Lookup_in_England_and_Wales.csv
+7.  sape23dt13mid2020lsoabroadagesestimatesunformatted.xlsx
+
+**Report Folder**:
+
+-   Houses **`.qmd`** files for introduction, data, EDA, analysis, and
+    conclusion.
+
+-   Also includes an **`images`** folder, **`report.html`** (rendered
+    Quarto report), and **`roadaccidentstyle.css`**.
+
+**Scripts Folder**:
+
+-   Contains **`scripts.R`** and **`missingvaluelist.R`**.
+
+**Interactive Leaflet Maps**
+
+Our spatial analysis section features two high-definition, interactive
+Leaflet maps. Due to their size and computational needs, they are
+presented as images.
+
+Should you have any further questions or need assistance, please feel
+free to reach out to our team at: alexander.junod.1\@unil.ch
+
+We hope our project provides you with valuable insights and an engaging
+experience.
