@@ -1,7 +1,7 @@
 ---
 title: "ROAD ACCIDENT ANALYSIS"
 subtitle: "COMPREHENSIVE DEEP DIVE ON ROAD ACCIDENTS IN THE UK (2022)"
-author: "Alexander Junod, Camille Leroy, Aurelien Urfer"
+author: "Alexander Junod"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output: html_document
 format:
